@@ -88,3 +88,35 @@ save("cash_flow", call("/v1/finance/cash-flow-statement/list", {"date": {"from":
 # аналитика (может требовать Premium)
 save("analytics_stocks", call("/v1/analytics/stocks", {"skus": [int(i["sources"][0]["sku"]) for i in info if i.get("sources")][:100]}))
 save("analytics_data", call("/v1/analytics/data", {"date_from": since.strftime("%Y-%m-%d"), "date_to": now.strftime("%Y-%m-%d"), "metrics": ["revenue", "ordered_units", "hits_view", "hits_tocart"], "dimension": ["sku"], "limit": 1000, "offset": 0}))
+
+# карточки: атрибуты, метаданные категорий, акции, поисковые запросы
+pid_list = [str(i["id"]) for i in info]
+attrs = call("/v4/product/info/attributes", {"filter": {"product_id": pid_list, "visibility": "ALL"}, "limit": 1000})
+save("attributes", attrs)
+meta, seen = {}, set()
+for a in attrs.get("result", []):
+    k = (a["description_category_id"], a["type_id"])
+    if k in seen: continue
+    seen.add(k)
+    r = call("/v1/description-category/attribute", {"description_category_id": k[0], "type_id": k[1], "language": "DEFAULT"})
+    meta[f"{k[0]}/{k[1]}"] = {str(x["id"]): {"name": x["name"], "required": x["is_required"]} for x in r.get("result", [])}
+save("attr_meta", meta)
+acts = requests.get(BASE + "/v1/actions", headers=H, timeout=60).json()
+save("actions", acts)
+detail = {}
+for a in acts.get("result", []):
+    p = call("/v1/actions/products", {"action_id": a["id"], "limit": 100, "offset": 0})
+    c = call("/v1/actions/candidates", {"action_id": a["id"], "limit": 100, "offset": 0})
+    detail[str(a["id"])] = {"action": {k: v for k, v in a.items() if k != "description"},
+                            "products": p.get("result", {}).get("products", []), "candidates": c.get("result", {}).get("products", [])}
+save("actions_detail", detail)
+skus = [str(i["sources"][0]["sku"]) for i in info if i.get("sources")]
+QD = {"date_from": since.strftime("%Y-%m-%dT00:00:00Z"), "date_to": now.strftime("%Y-%m-%dT00:00:00Z")}
+save("queries", call("/v1/analytics/product-queries", {"skus": skus, **QD, "page": 0, "page_size": 100}))
+try:
+    mp = json.load(open(ROOT / "data" / "metrics.json", encoding="utf-8"))["products"]
+    o2s = {i["offer_id"]: str(i["sources"][0]["sku"]) for i in info if i.get("sources")}
+    top = [o2s[p["offer_id"]] for p in mp if p["units"] > 0 and p["offer_id"] in o2s][:8]
+except Exception:
+    top = skus[:8]
+save("queries_details", call("/v1/analytics/product-queries/details", {"skus": top, **QD, "limit_by_sku": 15, "page": 0, "page_size": 100}))

@@ -9,6 +9,7 @@ PY="$APP/.venv/bin/python"
 "$PY" collector/collect.py 30
 "$PY" collector/analyze.py >/dev/null
 "$PY" collector/savings.py >/dev/null
+"$PY" collector/card_audit.py >/dev/null
 "$PY" collector/make_tasks.py >/dev/null
 "$PY" collector/build_site.py >/dev/null
 cp -r site/. /var/www/ozon/
