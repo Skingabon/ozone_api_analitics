@@ -48,6 +48,7 @@ for i in range(0, len(pids), 1000):
     r = call("/v3/product/info/list", {"product_id": pids[i:i+1000]})
     info += r.get("items", []) if "_error" not in r else []
 save("product_info", {"items": info})
+save("category_tree", call("/v1/description-category/tree", {"language": "DEFAULT"}))
 save("stocks", call("/v4/product/info/stocks", {"filter": {"visibility": "ALL"}, "last_id": "", "limit": 1000}))
 save("prices", call("/v5/product/info/prices", {"filter": {"visibility": "ALL"}, "last_id": "", "limit": 1000}))
 

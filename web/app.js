@@ -6,7 +6,7 @@ const num = v => v == null ? "—" : Number(v).toLocaleString("ru-RU");
 const cls = v => v == null ? "" : v < 0 ? "bad" : v > 0 ? "good" : "";
 const page = document.body.dataset.page;
 
-const NAV = [["index.html", "Хаб", "hub"], ["dashboard.html", "Дашборд", "dashboard"], ["products.html", "Товары", "products"], ["accounting.html", "Бухгалтерия", "accounting"]];
+const NAV = [["index.html", "Хаб", "hub"], ["dashboard.html", "Дашборд", "dashboard"], ["products.html", "Товары", "products"], ["savings.html", "Экономия", "savings"], ["accounting.html", "Бухгалтерия", "accounting"]];
 function shell(title, upd) {
   $("#app").innerHTML = `<header><div class="wrap"><span class="logo">HomeHelp · Ozon</span><nav>${NAV.map(n => `<a href="${n[0]}" class="${n[2] === page ? "on" : ""}">${n[1]}</a>`).join("")}</nav><span class="upd">${upd || ""}</span></div></header><main><div class="wrap"><h1>${title}</h1><div id="c"></div></div></main>`;
 }
@@ -100,6 +100,23 @@ function accounting(D) {
   <div class="card"><h2>Выгрузки для бухгалтера</h2><p><a href="accruals.csv" download>Начисления (CSV)</a> · <a href="products.csv" download>Прибыль по товарам (CSV)</a></p><p class="note">Файлы в кодировке UTF-8 с разделителем «;», открываются в Excel.</p></div>`;
 }
 
+/* ---------- Экономия ---------- */
+function savings(D) {
+  const S = D.savings, sv = S.items.slice().sort((a, b) => b.potential - a.potential);
+  const conf = { "высокая": "good", "средняя": "warn", "низкая": "mut" };
+  const rows = sv.map(s => `<tr><td><b>${esc(s.lever)}</b><div class="mut" style="font-size:13px">${esc(s.how)}</div><div class="note">${esc(s.basis)}</div></td><td class="n">${rub(s.current)}</td><td class="n good"><b>${rub(s.potential)}</b></td><td class="${conf[s.confidence] || ""}">${esc(s.confidence)}</td></tr>`).join("");
+  const pctUp = S.current_profit > 0 ? Math.round(S.total_potential / S.current_profit * 100) : 0;
+  $("#c").innerHTML = `<div class="grid kpis">
+    ${kpi("Комиссия Ozon за период", rub(S.commission_sum), `${S.commission_pct}% от выручки`, "bad")}
+    ${kpi("Резерв без роста продаж", rub(S.expense_only_potential), "штрафы, убыточные, услуги, возвраты", "good")}
+    ${kpi("Резерв с учётом упущенных заказов", rub(S.total_potential), `≈ +${pctUp}% к текущей прибыли (${rub(S.current_profit)})`, "good")}</div>
+  <div class="card"><h2>Где сократить расходы и что это даст (₽ в месяц)</h2><div class="scroll"><table><thead><tr><th>Направление и что делать</th><th class="n">Сейчас тратим</th><th class="n">Потенциал</th><th>Уверенность</th></tr></thead><tbody>${rows}</tbody></table></div><p class="note">${esc(S.note)}</p></div>
+  <div class="grid two"><div class="card"><h2>Комиссия: что даст снижение</h2><p class="mut" style="font-size:14px">Комиссия зависит от категории товара и утверждается Ozon; от схемы (FBO/FBS/rFBS) она не меняется. Ниже — эффект на текущем объёме продаж.</p>${table([{ h: "Снижение ставки", f: r => "−" + r.points + " п.п." }, { h: "Экономия в месяц", n: 1, f: r => rub(r.gain), c: () => "good" }], S.sensitivity, { sortable: false })}
+    <p class="note">Ставки 45–52% для запчастей необычно высоки. Проверьте в кабинете (Финансы → Тарифы) актуальную ставку категории и, если она не совпадает, обратитесь в поддержку с номерами отправлений. Точную причину по API определить нельзя.</p></div>
+  <div class="card"><h2>Логистика: расходы по услугам</h2>${bars(S.logistics.map(x => [`${x.name} (${x.count})`, x.sum]), { signed: true })}<p class="note">В скобках — число операций.</p></div></div>
+  <div class="card"><h2>Категории и ставки комиссии</h2>${table([{ h: "Категория", f: r => esc(r.name) }, { h: "Товаров", n: 1, f: r => r.products }, { h: "Ставка", n: 1, f: r => r.percent == null ? "—" : r.percent + "%" }, { h: "Выручка", n: 1, f: r => rub(r.sales) }, { h: "Комиссия", n: 1, f: r => rub(r.commission) }], S.categories, { sortable: false })}<p class="note">Проверьте, что карточки лежат в правильной категории: неверная категория даёт другую ставку и хуже ранжируется.</p></div>`;
+}
+
 /* ---------- Хаб ---------- */
 const TYPES_KEY = "type";
 async function hub(D) {
@@ -107,7 +124,7 @@ async function hub(D) {
   try { const r = await fetch("api/tasks", { cache: "no-store" }); if (!r.ok) throw 0; tasks = await r.json(); }
   catch { live = false; tasks = D.tasks_seed || []; }
   const types = [...new Set(tasks.map(t => t.type))].sort();
-  const reports = [["dashboard.html", "Дашборд", "Выручка, прибыль, расходы, отмены"], ["products.html", "Товары", "Прибыль и маржа по каждому артикулу"], ["accounting.html", "Бухгалтерия", "Баланс, движение денег, начисления"], ["accruals.csv", "Начисления (CSV)", "Выгрузка для учёта"], ["products.csv", "Прибыль по товарам (CSV)", "Выгрузка для Excel"]];
+  const reports = [["dashboard.html", "Дашборд", "Выручка, прибыль, расходы, отмены"], ["products.html", "Товары", "Прибыль и маржа по каждому артикулу"], ["savings.html", "Экономия расходов", "Комиссии, штрафы, логистика: сколько можно сэкономить"], ["accounting.html", "Бухгалтерия", "Баланс, движение денег, начисления"], ["accruals.csv", "Начисления (CSV)", "Выгрузка для учёта"], ["products.csv", "Прибыль по товарам (CSV)", "Выгрузка для Excel"]];
   $("#c").innerHTML = `<div class="grid reports" style="margin-bottom:18px">${reports.map(r => `<a href="${r[0]}"><b>${r[1]}</b><span>${r[2]}</span></a>`).join("")}</div>
   ${live ? "" : `<div class="banner">Сервер задач недоступен: список только для чтения, изменения не сохранятся.</div>`}
   <div class="card"><h2>Задачи и история</h2>
@@ -141,7 +158,7 @@ async function hub(D) {
   shell("Загрузка…");
   let D; try { D = await (await fetch("data.json", { cache: "no-store" })).json(); } catch { $("#c").innerHTML = "<p class=bad>Не удалось загрузить данные</p>"; return; }
   const upd = "Обновлено: " + new Date(D.generated_at).toLocaleString("ru-RU");
-  const T = { hub: "Хаб отчётов и задач", dashboard: "Дашборд магазина", products: "Товары и прибыль", accounting: "Бухгалтерия" };
+  const T = { hub: "Хаб отчётов и задач", dashboard: "Дашборд магазина", products: "Товары и прибыль", accounting: "Бухгалтерия", savings: "Снижение расходов" };
   shell(T[page], upd);
-  ({ hub, dashboard, products, accounting }[page])(D);
+  ({ hub, dashboard, products, accounting, savings }[page])(D);
 })();

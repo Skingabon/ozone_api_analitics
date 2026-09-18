@@ -7,12 +7,12 @@ OUT = ROOT / "site"
 shutil.rmtree(OUT, ignore_errors=True); OUT.mkdir()
 for f in ("style.css", "app.js"):
     shutil.copy(ROOT / "web" / f, OUT / f)
-PAGES = {"index": "hub", "dashboard": "dashboard", "products": "products", "accounting": "accounting"}
+PAGES = {"index": "hub", "dashboard": "dashboard", "products": "products", "accounting": "accounting", "savings": "savings"}
 tpl = ('<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
        '<meta name="robots" content="noindex"><title>Ozon · {t}</title><link rel="stylesheet" href="style.css"></head>'
        '<body data-page="{p}"><div id="app"></div><script src="app.js"></script></body></html>')
 for name, p in PAGES.items():
-    (OUT / f"{name}.html").write_text(tpl.format(t={"hub": "Хаб", "dashboard": "Дашборд", "products": "Товары", "accounting": "Бухгалтерия"}[p], p=p), encoding="utf-8")
+    (OUT / f"{name}.html").write_text(tpl.format(t={"hub": "Хаб", "dashboard": "Дашборд", "products": "Товары", "accounting": "Бухгалтерия", "savings": "Экономия"}[p], p=p), encoding="utf-8")
 
 M = json.load(open(ROOT / "data/metrics.json", encoding="utf-8"))
 M["tasks_seed"] = json.load(open(ROOT / "data/tasks_seed.json", encoding="utf-8"))
