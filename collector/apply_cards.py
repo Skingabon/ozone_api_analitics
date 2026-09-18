@@ -71,6 +71,18 @@ def setv(attrs, aid, value, dict_id=None):
     attrs.append({"id": aid, "complex_id": 0, "values": [v]})
 
 
+def normalize_complex(cx):
+    """Ozon отдаёт блок «Применимость» (complex 100003) плоским списком значений, а принимает строками
+    {"attributes":[марка, модель]}. Плоская отправка блок сбрасывает — конвертируем."""
+    flat = [c for c in cx if c.get("complex_id") == 100003 and "id" in c]
+    rest = [c for c in cx if not (c.get("complex_id") == 100003 and "id" in c)]
+    brands = next((c["values"] for c in flat if c["id"] == 22916), [])
+    models = next((c["values"] for c in flat if c["id"] == 22917), [])
+    rows = [{"attributes": [{"complex_id": 100003, "id": 22916, "values": [b]}, {"complex_id": 100003, "id": 22917, "values": [m]}]}
+            for b, m in zip(brands, models)]
+    return rest + rows
+
+
 def build(card, plan, price):
     attrs = json.loads(json.dumps(card["attributes"]))
     old_tags = next((a["values"][0]["value"] for a in attrs if a["id"] == 23171), "")
@@ -82,7 +94,7 @@ def build(card, plan, price):
     item = {"offer_id": card["offer_id"], "description_category_id": card["description_category_id"], "type_id": card["type_id"],
             "name": plan.get("name", card["name"]), "attributes": attrs, "images": card.get("images") or [], "primary_image": card.get("primary_image") or "",
             "height": card["height"], "depth": card["depth"], "width": card["width"], "dimension_unit": card["dimension_unit"],
-            "weight": card["weight"], "weight_unit": card["weight_unit"], "complex_attributes": card.get("complex_attributes") or [],
+            "weight": card["weight"], "weight_unit": card["weight_unit"], "complex_attributes": normalize_complex(card.get("complex_attributes") or []),
             "price": price["price"], "old_price": price["old_price"] or "0", "currency_code": "RUB"}
     if card.get("barcode"): item["barcode"] = card["barcode"]
     if card.get("color_image"): item["color_image"] = card["color_image"]

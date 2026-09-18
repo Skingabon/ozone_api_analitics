@@ -39,6 +39,10 @@ FIT = {
     "VTRENAULT02": [("Renault", "Megane", r"^Megane, (II|III)[ (]")],
     "VTRenault02_PA": [("Renault", "Megane", r"^Megane, (II|III)[ (]")],
 }
+# Kia/Hyundai: поколения по данным конкурентов (Solaris I 2010-2017, Rio III 2011-2017, Soul I, Venga)
+_KIA = [("Hyundai", "Solaris", r"^Solaris, I "), ("Kia", "Rio", r"^Rio, III"), ("Kia", "Soul", r"^Soul, I "), ("Kia", "Venga", r"^Venga")]
+for _o in ("Kia_Hyundai_VT/TK", "Kia_Hyundai_VT", "Kia_Hyundai_TK", "KiaHyundai_Origin"):
+    FIT[_o] = list(_KIA)
 # ТН ВЭД: правило «как у карточек той же марки, иначе как у большинства втулок»
 TN_BRAND = {"Chery": "8409990009", "Changan": "8409990009", "Geely": "8409990009", "Hummer": "8409990009"}
 TN_DEFAULT = "8703101100"
@@ -46,7 +50,7 @@ TN_TARGET = ["6RU423057-PoloSedan", "Polo-sedan", "VTRenault02_PA", "VTRenault_D
              "TK_CheryTigo4PRO", "VTTK_GeelyAtlas", "VT_CheryTigg07pro", "vt_ChanganCS35_reika"]
 TN_CHINA = {"Chery Tigo 4 PRO_VT", "TK_CheryTigo4PRO", "VTTK_GeelyAtlas", "VT_CheryTigg07pro", "vt_ChanganCS35_reika"}
 # без сохранения марки/модели (поколение в названии не указано) — ждут решения владельца
-PENDING = ["Kia_Hyundai_VT/TK", "Kia_Hyundai_VT", "Kia_Hyundai_TK", "KiaHyundai_Origin", "VTRenault_Duster_PA", "Largus-otopitel", "8201052009"]
+PENDING = ["VTRenault_Duster_PA", "Largus-otopitel", "8201052009"]
 
 _cache = {}
 def dic(text):
