@@ -1,0 +1,20 @@
+[Unit]
+Description=Ozon dashboards tasks API
+After=network.target
+
+[Service]
+User=www-data
+Environment=PORT=8090
+StateDirectory=ozon
+Environment=TASKS_STORE=/var/lib/ozon/tasks.json
+Environment=TASKS_SEED=/var/www/ozon/data.json
+ExecStart=/usr/bin/python3 /opt/ozon/tasks_api.py
+Restart=on-failure
+MemoryMax=64M
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

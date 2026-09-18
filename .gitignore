@@ -6,3 +6,6 @@ data/
 *.db
 *.sqlite
 .idea/
+cost_prices*.xlsx
+cost_prices*.csv
+site/
