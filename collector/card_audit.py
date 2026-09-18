@@ -69,7 +69,7 @@ for r in rows:
     r["search_users"] = next((x["unique_search_users"] for x in q if x["offer_id"] == r["offer_id"]), None)
 
 M["cards"] = {"rows": rows, "systemic": C["systemic"], "competitors": C["competitors"], "content": C["cards"],
-              "actions_advice": C["actions_advice"], "checked_at": C["checked_at"], "median_delivery": round(med_delivery)}
+              "actions_advice": C["actions_advice"], "applied": C.get("applied"), "checked_at": C["checked_at"], "median_delivery": round(med_delivery)}
 (ROOT / "data/metrics.json").write_text(json.dumps(M, ensure_ascii=False), encoding="utf-8")
 print("cards audit ok:", len(rows), "товаров; в акциях:", sum(1 for r in rows if r["actions"]))
 for r in rows[:6]:

@@ -6,7 +6,7 @@ const num = v => v == null ? "—" : Number(v).toLocaleString("ru-RU");
 const cls = v => v == null ? "" : v < 0 ? "bad" : v > 0 ? "good" : "";
 const page = document.body.dataset.page;
 
-const NAV = [["index.html", "Хаб", "hub"], ["dashboard.html", "Дашборд", "dashboard"], ["products.html", "Товары", "products"], ["cards.html", "Карточки", "cards"], ["savings.html", "Экономия", "savings"], ["accounting.html", "Бухгалтерия", "accounting"]];
+const NAV = [["index.html", "Хаб", "hub"], ["dashboard.html", "Дашборд", "dashboard"], ["products.html", "Товары", "products"], ["cards.html", "Карточки", "cards"], ["ideas.html", "Идеи", "ideas"], ["savings.html", "Экономия", "savings"], ["accounting.html", "Бухгалтерия", "accounting"]];
 function shell(title, upd) {
   $("#app").innerHTML = `<header><div class="wrap"><span class="logo">HomeHelp · Ozon</span><nav>${NAV.map(n => `<a href="${n[0]}" class="${n[2] === page ? "on" : ""}">${n[1]}</a>`).join("")}</nav><span class="upd">${upd || ""}</span></div></header><main><div class="wrap"><h1>${title}</h1><div id="c"></div></div></main>`;
 }
@@ -157,7 +157,7 @@ function cards(D) {
       <b>Хэштеги</b><p class="mut" style="font-size:13px;word-break:break-word">${esc(c.hashtags)}</p>
       <b>Заполнить</b><ul>${Object.entries(c.attributes).map(([k, v]) => `<li><b>${esc(k)}:</b> ${esc(v)}</li>`).join("")}</ul>
       ${c.extra.length ? `<b>Ещё</b><ul>${c.extra.map(x => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}</div></div></div>`; }).join("");
-  $("#c").innerHTML = `<div class="grid kpis">
+  $("#c").innerHTML = (C.applied ? `<div class="card" style="border-color:var(--good)"><b class="good">Правки внесены ${esc(C.applied.date)}.</b> ${esc(C.applied.text)}</div>` : "") + `<div class="grid kpis">
     ${kpi("Товаров в акциях", `${inActs.length} из ${rows.length}`, "почти все включены автоматически", inActs.length > rows.length / 2 ? "warn" : "")}
     ${kpi("Средняя скидка в акциях", avgDisc + "%", "от вашего прайса, платите вы", avgDisc >= 25 ? "bad" : "")}
     ${kpi("Карточек без марки/модели авто", `${noKey}`, "не попадают в подбор по автомобилю", noKey ? "bad" : "good")}
@@ -174,6 +174,34 @@ function cards(D) {
   const rh = rows.slice(); const drawH = () => { $("#ht").innerHTML = table(health, rh); makeSortable($("#ht"), health, rh, drawH); }; drawH();
 }
 
+/* ---------- Идеи ---------- */
+function ideas(D) {
+  const I = D.ideas, vc = { "продолжать": "good", "расширять": "good", "делать": "good", "только комплектами": "warn", "менять формат": "warn", "гипотеза, проверить": "warn", "не рекомендуется": "bad" };
+  const med = (D.cards && D.cards.median_delivery) || 100;
+  const rowsN = I.niches.map(n => `<div class="card"><h2>${esc(n.name)} <span class="tag ${vc[n.verdict] === "bad" ? "p-high" : vc[n.verdict] === "warn" ? "p-medium" : ""}">${esc(n.verdict)}</span></h2>
+    <div class="grid two"><div><b>Что видно на Ozon</b><p style="font-size:14px">${esc(n.evidence)}</p><p class="note">Статус данных: ${esc(n.status)}. Цены на витрине: ${esc(n.price)}.</p></div>
+    <div><b>Риски</b><p style="font-size:14px">${esc(n.risk)}</p><b>Что делать</b><p style="font-size:14px" class="${vc[n.verdict] || ""}">${esc(n.action)}</p></div></div></div>`).join("");
+  $("#c").innerHTML = `<div class="card"><h2>Принципы отбора</h2><ul>${I.principles.map(p => `<li>${esc(p)}</li>`).join("")}</ul></div>
+  <div class="card"><h2>Калькулятор: окупится ли товар на Ozon</h2>
+    <div class="filters">
+      <label>Цена, которую получаете (после скидок), ₽<input id="k_p" type="number" value="1200" min="0"></label>
+      <label>Себестоимость печати, ₽<input id="k_c" type="number" value="150" min="0"></label>
+      <label>Комиссия, %<input id="k_k" type="number" value="48" min="0" max="90"></label>
+      <label>Логистика, ₽<input id="k_l" type="number" value="${med}" min="0"></label>
+      <label>Упаковка, ₽<input id="k_u" type="number" value="15" min="0"></label>
+      <label>Нужная маржа, %<input id="k_m" type="number" value="30" min="0" max="80"></label></div>
+    <div class="grid kpis" id="k_out"></div><p class="note">Комиссия и логистика по умолчанию взяты из ваших фактических начислений. Отмены, возвраты и штрафы в расчёт не входят.</p></div>
+  <h2 style="margin-top:22px">Ниши</h2>${rowsN}
+  <div class="card"><h2>План проверки на 30 дней</h2><ol>${I.test_plan.map(p => `<li>${esc(p)}</li>`).join("")}</ol></div>
+  <p class="note">Данные выдачи Ozon сняты вручную ${esc(I.checked_at)}: цена и число отзывов показывают спрос, но не точные продажи.</p>`;
+  const calc = () => {
+    const v = id => parseFloat($("#" + id).value) || 0, p = v("k_p"), c = v("k_c"), k = v("k_k") / 100, l = v("k_l"), u = v("k_u"), m = v("k_m") / 100;
+    const net = p * (1 - k) - l - u - c, mg = p ? net / p * 100 : 0, denom = 1 - k - m, minP = denom > 0 ? (l + u + c) / denom : null;
+    $("#k_out").innerHTML = kpi("Прибыль с единицы", rub(net), "", cls(net)) + kpi("Маржа", mg.toFixed(1) + "%", "от цены", mg >= m * 100 ? "good" : mg > 0 ? "warn" : "bad") + kpi("Мин. цена для нужной маржи", minP == null ? "невозможно" : rub(minP), "при заданных расходах");
+  };
+  document.querySelectorAll("#k_p,#k_c,#k_k,#k_l,#k_u,#k_m").forEach(e => e.oninput = calc); calc();
+}
+
 /* ---------- Хаб ---------- */
 const TYPES_KEY = "type";
 async function hub(D) {
@@ -181,7 +209,7 @@ async function hub(D) {
   try { const r = await fetch("api/tasks", { cache: "no-store" }); if (!r.ok) throw 0; tasks = await r.json(); }
   catch { live = false; tasks = D.tasks_seed || []; }
   const types = [...new Set(tasks.map(t => t.type))].sort();
-  const reports = [["dashboard.html", "Дашборд", "Выручка, прибыль, расходы, отмены"], ["products.html", "Товары", "Прибыль и маржа по каждому артикулу"], ["cards.html", "Карточки и акции", "Аудит SEO, конкуренты, готовые тексты, цены в акциях"], ["savings.html", "Экономия расходов", "Комиссии, штрафы, логистика: сколько можно сэкономить"], ["accounting.html", "Бухгалтерия", "Баланс, движение денег, начисления"], ["accruals.csv", "Начисления (CSV)", "Выгрузка для учёта"], ["products.csv", "Прибыль по товарам (CSV)", "Выгрузка для Excel"]];
+  const reports = [["dashboard.html", "Дашборд", "Выручка, прибыль, расходы, отмены"], ["products.html", "Товары", "Прибыль и маржа по каждому артикулу"], ["cards.html", "Карточки и акции", "Аудит SEO, конкуренты, готовые тексты, цены в акциях"], ["ideas.html", "Идеи для печати", "Что ещё печатать и продавать: спрос, конкуренты, калькулятор"], ["savings.html", "Экономия расходов", "Комиссии, штрафы, логистика: сколько можно сэкономить"], ["accounting.html", "Бухгалтерия", "Баланс, движение денег, начисления"], ["accruals.csv", "Начисления (CSV)", "Выгрузка для учёта"], ["products.csv", "Прибыль по товарам (CSV)", "Выгрузка для Excel"]];
   $("#c").innerHTML = `<div class="grid reports" style="margin-bottom:18px">${reports.map(r => `<a href="${r[0]}"><b>${r[1]}</b><span>${r[2]}</span></a>`).join("")}</div>
   ${live ? "" : `<div class="banner">Сервер задач недоступен: список только для чтения, изменения не сохранятся.</div>`}
   <div class="card"><h2>Задачи и история</h2>
@@ -215,7 +243,7 @@ async function hub(D) {
   shell("Загрузка…");
   let D; try { D = await (await fetch("data.json", { cache: "no-store" })).json(); } catch { $("#c").innerHTML = "<p class=bad>Не удалось загрузить данные</p>"; return; }
   const upd = "Обновлено: " + new Date(D.generated_at).toLocaleString("ru-RU");
-  const T = { hub: "Хаб отчётов и задач", dashboard: "Дашборд магазина", products: "Товары и прибыль", accounting: "Бухгалтерия", savings: "Снижение расходов", cards: "Карточки: аудит и акции" };
+  const T = { hub: "Хаб отчётов и задач", dashboard: "Дашборд магазина", products: "Товары и прибыль", accounting: "Бухгалтерия", savings: "Снижение расходов", cards: "Карточки: аудит и акции", ideas: "Что печатать и продавать" };
   shell(T[page], upd);
-  ({ hub, dashboard, products, accounting, savings, cards }[page])(D);
+  ({ hub, dashboard, products, accounting, savings, cards, ideas }[page])(D);
 })();
