@@ -2,17 +2,20 @@
 
   python collector/apply_promos.py              # план (dry-run)
   python collector/apply_promos.py --apply      # применить
+  python collector/apply_promos.py --auto       # ежедневная автоочистка (AUTO, скидка >= 20%), журнал data/promo_cleanup_log.json
   python collector/apply_promos.py --rollback   # вернуть участие из data/backup/actions_before_*.json
 Ручные добавления (MANUAL) не трогаются. Бэкап участия пишется перед применением.
 """
-import json, sys, time
+import json, os, sys, time
 from datetime import date
 from pathlib import Path
 import apply_cards as A
 
 ROOT = Path(__file__).resolve().parent.parent
 THRESHOLD = 0.20
-KEEP = set()   # артикулы, которые не трогаем
+KEEP = set()   # артикулы, которые не трогаем (дополняется из audit/promo_keep.json)
+MAX_PER_RUN = 60   # защита: не удалять массово за один запуск
+LOG = ROOT / "data/promo_cleanup_log.json"
 
 
 def snapshot():
@@ -58,5 +61,41 @@ def main(mode):
                 s, r = A.call("/v1/actions/products/activate", {"action_id": int(aid), "products": back}); print(aid, s, str(r)[:150])
 
 
+
+def auto():
+    """Ежедневная автоочистка: убрать участия режима AUTO со скидкой >= THRESHOLD. Ручные добавления не трогаем. Пишет журнал."""
+    try: KEEP.update(json.load(open(ROOT / "audit/promo_keep.json", encoding="utf-8")))
+    except Exception: pass
+    info = {i["id"]: i for i in json.load(open(ROOT / "data/raw/product_info.json", encoding="utf-8"))["items"]}
+    snap = snapshot(); plan = []
+    for aid, d in snap.items():
+        for p in d["products"]:
+            disc = 1 - p["action_price"] / p["price"] if p["price"] else 0
+            o = info.get(p["id"], {}).get("offer_id", str(p["id"]))
+            if p.get("add_mode") == "AUTO" and disc >= THRESHOLD and o not in KEEP:
+                plan.append({"aid": aid, "action": d["title"], "pid": p["id"], "offer_id": o, "price": p["price"], "action_price": p["action_price"], "discount": round(disc * 100)})
+    entry = {"date": time.strftime("%Y-%m-%d"), "removed": [], "error": None, "planned": len(plan)}
+    if len(plan) > MAX_PER_RUN:
+        entry["error"] = f"план {len(plan)} > {MAX_PER_RUN}, автоочистка пропущена"
+    elif plan:
+        bk = ROOT / "data/backup"; bk.mkdir(parents=True, exist_ok=True)
+        (bk / f"actions_before_{time.strftime('%Y-%m-%d')}_auto.json").write_text(json.dumps(snap, ensure_ascii=False), encoding="utf-8")
+        by = {}
+        for x in plan: by.setdefault(x["aid"], []).append(x["pid"])
+        done = set()
+        for aid, pids in by.items():
+            s, r = A.call("/v1/actions/products/deactivate", {"action_id": int(aid), "product_ids": pids})
+            if s == 200: done.update((aid, pid) for pid in r.get("result", {}).get("product_ids", []))
+            else: entry["error"] = f"deactivate {aid}: {s}"
+        entry["removed"] = [{k: x[k] for k in ("offer_id", "action", "price", "action_price", "discount")} | {"aid": x["aid"]} for x in plan if (x["aid"], x["pid"]) in done]
+    hist = []
+    try: hist = json.load(open(LOG, encoding="utf-8")).get("history", [])
+    except Exception: pass
+    LOG.write_text(json.dumps({**entry, "history": (hist + [{"date": entry["date"], "count": len(entry["removed"]), "error": entry["error"]}])[-60:]}, ensure_ascii=False), encoding="utf-8")
+    print(f"автоочистка акций: убрано {len(entry['removed'])} из {len(plan)}" + (f" | ОШИБКА: {entry['error']}" if entry["error"] else ""))
+    for x in entry["removed"]: print(f"   {x['offer_id']} ← {x['action'][:40]} (−{x['discount']}%)")
+
+
 if __name__ == "__main__":
-    main("apply" if "--apply" in sys.argv else "rollback" if "--rollback" in sys.argv else "plan")
+    if "--auto" in sys.argv: auto()
+    else: main("apply" if "--apply" in sys.argv else "rollback" if "--rollback" in sys.argv else "plan")

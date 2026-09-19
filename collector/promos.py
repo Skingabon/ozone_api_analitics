@@ -53,6 +53,13 @@ def advise_candidate(o, price, max_price, action_type):
     return "maybe", f"На ваше усмотрение: скидка {disc*100:.0f}%, потеря {e['net_list']-e['net_action']} ₽ на штуке"
 
 
+# журнал автоочистки за сегодня: эти участия уже удалены после сбора данных, из отчёта о текущем участии исключаем
+from datetime import date as _d
+cleanup_log = {}
+try: cleanup_log = json.load(open(ROOT / "data/promo_cleanup_log.json", encoding="utf-8"))
+except Exception: pass
+cleaned = cleanup_log.get("removed", []) if cleanup_log.get("date") == _d.today().isoformat() else []
+cleaned_keys = {f"{x['offer_id']}|{x['aid']}" for x in cleaned}
 actions, part, cand = [], [], []
 now = set()
 for aid, d in detail.items():
@@ -60,6 +67,7 @@ for aid, d in detail.items():
     deep = 0
     for p in ps:
         o = info.get(p["id"], {}).get("offer_id", str(p["id"])); price = float(p["price"]); ap = float(p["action_price"])
+        if f"{o}|{aid}" in cleaned_keys: now.add(f"{o}|{aid}|c"); continue   # уже убрано автоочисткой
         adv, why = advise_participant(o, price, ap, p.get("add_mode"))
         e = economics(o, price, ap); deep += adv == "remove"
         part.append({"offer_id": o, "action": a["title"].strip(), "action_id": int(aid), "price": price, "action_price": ap,
@@ -77,13 +85,15 @@ for aid, d in detail.items():
 snap_f = ROOT / "data/promo_snapshot.json"
 try: prev = json.load(open(snap_f, encoding="utf-8"))
 except Exception: prev = None
-changes = {"added": [], "removed": [], "since": None}
+changes = {"added": [], "removed": [], "cleaned": [], "since": None}
 if prev is not None:
     old = set(prev["items"]); changes["since"] = prev["date"]
     fmt = lambda k: {"offer_id": k.split("|")[0], "action": next((x["title"] for x in actions if str(x["id"]) == k.split("|")[1]), k.split("|")[1])}
-    changes["added"] = [fmt(k) for k in sorted(now - old)]; changes["removed"] = [fmt(k) for k in sorted(old - now)]
+    now_c = {k[:-2] for k in now if k.endswith("|c")}; now_real = {k for k in now if not k.endswith("|c")}
+    changes["added"] = [fmt(k) for k in sorted((now_real | now_c) - old)]; changes["removed"] = [fmt(k) for k in sorted(old - now_real - now_c)]
+    changes["cleaned"] = [{"offer_id": x["offer_id"], "action": x["action"], "discount": x["discount"]} for x in cleaned]
 if True:
-    snap_f.write_text(json.dumps({"date": date.today().isoformat(), "items": sorted(now)}, ensure_ascii=False), encoding="utf-8")
+    snap_f.write_text(json.dumps({"date": date.today().isoformat(), "items": sorted(k for k in now if not k.endswith("|c"))}, ensure_ascii=False), encoding="utf-8")
 
 rm = [p for p in part if p["advice"] == "remove"]; jn = [c for c in cand if c["advice"] == "join"]
 avg = round(sum(p["discount"] for p in part) / len(part)) if part else 0
@@ -91,6 +101,7 @@ M["promos"] = {"actions": sorted(actions, key=lambda x: -x["in"]), "participatio
                "candidates": sorted(cand, key=lambda c: (c["advice"] != "join", c["offer_id"])), "changes": changes,
                "kpi": {"participations": len(part), "products": len({p["offer_id"] for p in part}), "avg_discount": avg,
                        "remove": len(rm), "remove_products": len({p["offer_id"] for p in rm}), "join": len(jn)},
+               "autoclean": {"enabled": True, "threshold": 20, "last": cleanup_log.get("date"), "error": cleanup_log.get("error"), "history": cleanup_log.get("history", [])[-14:]},
                "note": "Рекомендации считаются по вашим себестоимостям, комиссии Ozon и логистике на единицу; эффект акции на объём заказов Ozon не показывает."}
 (ROOT / "data/metrics.json").write_text(json.dumps(M, ensure_ascii=False), encoding="utf-8")
 print("promos ok:", M["promos"]["kpi"], "| изменения:", len(changes["added"]), "добавлено,", len(changes["removed"]), "убрано")

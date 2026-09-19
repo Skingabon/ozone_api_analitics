@@ -7,6 +7,7 @@ exec 9>/var/lock/ozon-update.lock; flock -n 9 || { echo "already running"; exit 
 echo "=== $(date -Is) start"
 PY="$APP/.venv/bin/python"
 "$PY" collector/collect.py 30
+"$PY" collector/apply_promos.py --auto || echo "автоочистка акций не выполнена"
 "$PY" collector/analyze.py >/dev/null
 "$PY" collector/savings.py >/dev/null
 "$PY" collector/quality.py >/dev/null
