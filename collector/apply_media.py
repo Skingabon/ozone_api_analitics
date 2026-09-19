@@ -32,7 +32,7 @@ def disk_links(o, files):
     for d in ("/AVTO", DISK, base): Y.ensure_dir(d)
     names = []
     for i, f in enumerate(files, 1):
-        name = f"{i:02d}_{f.stem.split('_', 1)[-1] if f.stem[:2].isdigit() else f.stem}.png"
+        name = f"{i:02d}_{f.stem.split('_', 1)[-1] if f.stem[:2].isdigit() else f.stem}{f.suffix.lower()}"
         st = Y.upload(f, f"{base}/{name}")
         names.append(name)
     Y.req("PUT", "/resources/publish", params={"path": base})
