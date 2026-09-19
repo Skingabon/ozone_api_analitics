@@ -131,3 +131,54 @@ try:
 except Exception:
     top = skus[:8]
 save("queries_details", call("/v1/analytics/product-queries/details", {"skus": top, **QD, "limit_by_sku": 15, "page": 0, "page_size": 100}))
+
+# качество: рейтинг продавца, контент-рейтинг карточек, оборачиваемость, заявки на скидку, компенсации
+save("rating_summary", call("/v1/rating/summary", {}))
+save("rating_fbs", call("/v1/rating/index/fbs/info", {}))
+rh = call("/v1/rating/history", {"date_from": iso(since), "date_to": iso(now), "ratings": ["rating_review_avg_score_total", "rating_shipment_delay_cb"]})
+save("rating_history", rh)
+cr = []
+for i in range(0, len(skus), 100):
+    r = call("/v1/product/rating-by-sku", {"skus": skus[i:i + 100]})
+    cr += r.get("products", []) if "_error" not in r else []
+save("content_rating", {"products": cr})
+tv, off = [], 0
+while True:
+    r = call("/v1/analytics/turnover/stocks", {"limit": 1000, "offset": off})
+    if "_error" in r or not r.get("items"): break
+    tv += r["items"]; off += 1000
+    if len(r["items"]) < 1000: break
+save("turnover", {"items": tv})
+tasks = {}
+for st in ("NEW", "APPROVED", "DECLINED", "AUTO_APPROVED", "AUTO_DECLINED"):
+    r = call("/v2/actions/discounts-task/list", {"status": st, "limit": 50})
+    tasks[st] = r.get("tasks", []) if "_error" not in r else []
+save("discount_tasks", tasks)
+comp = {}
+for m in range(3):
+    d = (now.replace(day=1) - timedelta(days=30 * m)).strftime("%Y-%m")
+    comp[d] = {"compensation": call("/v1/finance/compensation", {"date": d, "language": "DEFAULT"}),
+               "decompensation": call("/v1/finance/decompensation", {"date": d, "language": "DEFAULT"})}
+save("compensation", comp)
+
+# разбор отчётов о компенсациях (без персональных данных): тип, товар, кол-во, сумма
+import io
+from openpyxl import load_workbook
+crows = []
+for month, kinds in comp.items():
+    for kind, r in kinds.items():
+        code = (r.get("result") or {}).get("code") if isinstance(r, dict) else None
+        if not code: continue
+        for _ in range(8):
+            info_r = call("/v1/report/info", {"code": code}); res = info_r.get("result") or {}
+            if res.get("status") != "processing": break
+            time.sleep(4)
+        if res.get("status") != "success" or not res.get("file"): continue
+        try:
+            ws = load_workbook(io.BytesIO(requests.get(res["file"], timeout=60).content), data_only=True).active
+            for row in ws.iter_rows(values_only=True):
+                if row[1] and str(row[1]).isdigit() and row[2]:
+                    crows.append({"month": month, "kind": kind, "type": row[2], "offer_id": row[4], "qty": row[7], "amount": row[13] if len(row) > 13 else None})
+        except Exception as e:
+            print("compensation parse", month, kind, e)
+save("compensation_rows", {"items": crows})

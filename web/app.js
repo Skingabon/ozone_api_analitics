@@ -6,7 +6,7 @@ const num = v => v == null ? "—" : Number(v).toLocaleString("ru-RU");
 const cls = v => v == null ? "" : v < 0 ? "bad" : v > 0 ? "good" : "";
 const page = document.body.dataset.page;
 
-const NAV = [["index.html", "Хаб", "hub"], ["dashboard.html", "Дашборд", "dashboard"], ["products.html", "Товары", "products"], ["cards.html", "Карточки", "cards"], ["ideas.html", "Идеи", "ideas"], ["savings.html", "Экономия", "savings"], ["accounting.html", "Бухгалтерия", "accounting"]];
+const NAV = [["index.html", "Хаб", "hub"], ["dashboard.html", "Дашборд", "dashboard"], ["products.html", "Товары", "products"], ["cards.html", "Карточки", "cards"], ["ideas.html", "Идеи", "ideas"], ["quality.html", "Качество", "quality"], ["savings.html", "Экономия", "savings"], ["accounting.html", "Бухгалтерия", "accounting"]];
 function shell(title, upd) {
   $("#app").innerHTML = `<header><div class="wrap"><span class="logo">HomeHelp · Ozon</span><nav>${NAV.map(n => `<a href="${n[0]}" class="${n[2] === page ? "on" : ""}">${n[1]}</a>`).join("")}</nav><span class="upd">${upd || ""}</span></div></header><main><div class="wrap"><h1>${title}</h1><div id="c"></div></div></main>`;
 }
@@ -202,6 +202,45 @@ function ideas(D) {
   document.querySelectorAll("#k_p,#k_c,#k_k,#k_l,#k_u,#k_m").forEach(e => e.oninput = calc); calc();
 }
 
+/* ---------- Качество ---------- */
+function quality(D) {
+  const Q = D.quality, gs = { OK: "good", WARNING: "warn", CRITICAL: "bad" };
+  const score = Q.ratings.find(r => r.key === "rating_review_avg_score_total");
+  const prog = Q.ratings.find(r => r.key.includes("progress") || r.name.includes("прогрессив"));
+  const need = Q.premium_threshold && score ? (Q.premium_threshold - score.value) : null;
+  const rateCols = [{ h: "Группа", f: r => esc(r.group) }, { h: "Показатель", f: r => esc(r.name) },
+    { h: "Сейчас", n: 1, f: r => r.value, k: r => r.value }, { h: "Было", n: 1, f: r => r.past },
+    { h: "Статус", f: r => `<span class="${gs[r.status] || "mut"}">${esc({ OK: "норма", WARNING: "внимание", CRITICAL: "критично", UNKNOWN_STATUS: "нет данных" }[r.status] || r.status)}</span>` }];
+  const cRows = Q.content.slice();
+  const cCols = [{ h: "Товар", f: r => `<b>${esc(r.offer_id)}</b>`, k: r => r.offer_id },
+    { h: "Контент-рейтинг", n: 1, f: r => r.rating, c: r => r.rating < 60 ? "bad" : r.rating < 80 ? "warn" : "good", k: r => r.rating },
+    { h: "Продажи", n: 1, f: r => rub(r.sales), k: r => r.sales },
+    { h: "Что даст рост (по убыванию эффекта)", f: r => r.improve.length ? r.improve.map(m => `<div style="font-size:13px">${esc(m.what)} <span class="mut">(${esc(m.group)})</span></div>`).join("") : "<span class=good>всё выполнено</span>" }];
+  const dt = Q.discount_new.map(t => ({ ...t, end: (t.end_at || "").slice(0, 10) }));
+  const dCols = [{ h: "Товар", f: r => `<b>${esc(r.offer_id)}</b>` }, { h: "Сейчас", n: 1, f: r => rub(r.original) }, { h: "Просят", n: 1, f: r => rub(r.requested) },
+    { h: "Скидка", n: 1, f: r => r.discount + "%" }, { h: "Штук", n: 1, f: r => r.qty }, { h: "Ваш минимум", n: 1, f: r => rub(r.min_auto) }, { h: "Ответить до", f: r => esc(r.end) }];
+  const tCols = [{ h: "Товар", f: r => `<b>${esc(r.offer_id)}</b>` }, { h: "Остаток на складе Ozon", n: 1, f: r => num(r.stock) }, { h: "Продаж в день", n: 1, f: r => r.ads == null ? "—" : r.ads },
+    { h: "Хватит на дней", n: 1, f: r => r.idc == null ? "—" : Math.round(r.idc) }, { h: "Оценка", f: r => esc({ GRADES_GREEN: "норма", GRADES_NOSALES: "нет продаж", GRADES_CRITICAL: "критично", GRADES_SURPLUS: "избыток", GRADES_DEFICIT: "дефицит" }[r.grade] || r.grade) }];
+  const cpCols = [{ h: "Месяц", f: r => esc(r.month) }, { h: "Тип", f: r => esc(r.type) }, { h: "Товар", f: r => esc(r.offer_id) }, { h: "Штук", n: 1, f: r => r.qty }, { h: "Сумма", n: 1, f: r => rub(r.amount) }];
+  const fbs = Q.fbs_index;
+  $("#c").innerHTML = `<div class="grid kpis">
+    ${kpi("Оценка товаров", score ? score.value : "—", Q.premium_threshold ? `до статуса Premium (${Q.premium_threshold}) не хватает ${need > 0 ? need.toFixed(2) : 0}` : "", score && score.value >= (Q.premium_threshold || 5) ? "good" : "warn")}
+    ${kpi("Средний контент-рейтинг", Q.content_avg, "по всем карточкам, из 100", Q.content_avg < 70 ? "warn" : "")}
+    ${kpi("Индекс ошибок FBS", fbs.index ?? "—", `${esc(fbs.from || "")} — ${esc(fbs.to || "")}`, (fbs.index || 0) > 1 ? "bad" : "good")}
+    ${kpi("Заявок на скидку", Q.discount_new.length, "ждут вашего ответа", Q.discount_new.length ? "warn" : "")}</div>
+  ${prog && prog.status === "CRITICAL" ? `<div class="banner">Показатель «${esc(prog.name)}» в критическом состоянии. Проверьте причину в кабинете Ozon (раздел «Рейтинг»): чаще всего это отмены и просрочки отгрузки.</div>` : ""}
+  <div class="card"><h2>Рейтинг продавца</h2><div id="rt"></div><p class="note">Оценка отзывов Ozon пересчитывается по скользящему окну. Порог Premium даёт дополнительные возможности в кабинете, включая аналитику поисковых запросов и работу с отзывами.</p></div>
+  <div class="card"><h2>Контент-рейтинг карточек</h2><div id="ct"></div><p class="note">Показывает, насколько полно заполнена карточка по оценке Ozon. Самый сильный рычаг почти везде: видео карточки и заполнение оставшихся атрибутов.</p></div>
+  ${Q.discount_new.length ? `<div class="card"><h2>Заявки покупателей на скидку (ждут ответа)</h2><div id="dt"></div><p class="note">Каждая заявка на 1 штуку. Если ответить не успеть, заявка истекает сама. Согласие снижает цену этой единицы. Решение по цене остаётся за вами. Всего за период заявок: ${Object.entries(Q.discount_counts).map(([k, v]) => `${esc(k)} ${v}`).join(", ")}.</p></div>` : ""}
+  <div class="grid two"><div class="card"><h2>Оборачиваемость (склады Ozon)</h2>${Q.turnover.length ? `<div id="tv"></div>` : "<p class=mut>Нет данных</p>"}<p class="note">Считается только по товарам, лежащим на складах Ozon (FBO). Товары на вашем складе (FBS) здесь не видны.</p></div>
+  <div class="card"><h2>Компенсации от Ozon</h2>${Q.compensation.length ? `<div id="cp"></div>` : "<p class=mut>Начисленных компенсаций за последние 3 месяца нет.</p>"}<p class="note">${esc(Q.compensation_note)}</p></div></div>`;
+  const drawR = () => { $("#rt").innerHTML = table(rateCols, Q.ratings, { sortable: false }); }; drawR();
+  const drawC = () => { $("#ct").innerHTML = table(cCols, cRows); makeSortable($("#ct"), cCols, cRows, drawC); }; drawC();
+  if ($("#dt")) $("#dt").innerHTML = table(dCols, dt, { sortable: false });
+  if ($("#tv")) $("#tv").innerHTML = table(tCols, Q.turnover, { sortable: false });
+  if ($("#cp")) $("#cp").innerHTML = table(cpCols, Q.compensation, { sortable: false });
+}
+
 /* ---------- Хаб ---------- */
 const TYPES_KEY = "type";
 async function hub(D) {
@@ -209,7 +248,7 @@ async function hub(D) {
   try { const r = await fetch("api/tasks", { cache: "no-store" }); if (!r.ok) throw 0; tasks = await r.json(); }
   catch { live = false; tasks = D.tasks_seed || []; }
   const types = [...new Set(tasks.map(t => t.type))].sort();
-  const reports = [["dashboard.html", "Дашборд", "Выручка, прибыль, расходы, отмены"], ["products.html", "Товары", "Прибыль и маржа по каждому артикулу"], ["cards.html", "Карточки и акции", "Аудит SEO, конкуренты, готовые тексты, цены в акциях"], ["ideas.html", "Идеи для печати", "Что ещё печатать и продавать: спрос, конкуренты, калькулятор"], ["savings.html", "Экономия расходов", "Комиссии, штрафы, логистика: сколько можно сэкономить"], ["accounting.html", "Бухгалтерия", "Баланс, движение денег, начисления"], ["accruals.csv", "Начисления (CSV)", "Выгрузка для учёта"], ["products.csv", "Прибыль по товарам (CSV)", "Выгрузка для Excel"]];
+  const reports = [["dashboard.html", "Дашборд", "Выручка, прибыль, расходы, отмены"], ["products.html", "Товары", "Прибыль и маржа по каждому артикулу"], ["cards.html", "Карточки и акции", "Аудит SEO, конкуренты, готовые тексты, цены в акциях"], ["ideas.html", "Идеи для печати", "Что ещё печатать и продавать: спрос, конкуренты, калькулятор"], ["quality.html", "Качество и рейтинг", "Рейтинг продавца, контент-рейтинг, заявки на скидку, компенсации"], ["savings.html", "Экономия расходов", "Комиссии, штрафы, логистика: сколько можно сэкономить"], ["accounting.html", "Бухгалтерия", "Баланс, движение денег, начисления"], ["accruals.csv", "Начисления (CSV)", "Выгрузка для учёта"], ["products.csv", "Прибыль по товарам (CSV)", "Выгрузка для Excel"]];
   $("#c").innerHTML = `<div class="grid reports" style="margin-bottom:18px">${reports.map(r => `<a href="${r[0]}"><b>${r[1]}</b><span>${r[2]}</span></a>`).join("")}</div>
   ${live ? "" : `<div class="banner">Сервер задач недоступен: список только для чтения, изменения не сохранятся.</div>`}
   <div class="card"><h2>Задачи и история</h2>
@@ -243,7 +282,7 @@ async function hub(D) {
   shell("Загрузка…");
   let D; try { D = await (await fetch("data.json", { cache: "no-store" })).json(); } catch { $("#c").innerHTML = "<p class=bad>Не удалось загрузить данные</p>"; return; }
   const upd = "Обновлено: " + new Date(D.generated_at).toLocaleString("ru-RU");
-  const T = { hub: "Хаб отчётов и задач", dashboard: "Дашборд магазина", products: "Товары и прибыль", accounting: "Бухгалтерия", savings: "Снижение расходов", cards: "Карточки: аудит и акции", ideas: "Что печатать и продавать" };
+  const T = { hub: "Хаб отчётов и задач", dashboard: "Дашборд магазина", products: "Товары и прибыль", accounting: "Бухгалтерия", savings: "Снижение расходов", cards: "Карточки: аудит и акции", ideas: "Что печатать и продавать", quality: "Качество и рейтинг" };
   shell(T[page], upd);
-  ({ hub, dashboard, products, accounting, savings, cards, ideas }[page])(D);
+  ({ hub, dashboard, products, accounting, savings, cards, ideas, quality }[page])(D);
 })();

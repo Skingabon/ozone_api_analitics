@@ -68,6 +68,19 @@ if CD:
     add("promo-manual", "Цены", "medium", "Проверить ручные скидки в «Распродаже стока»", "Убедиться, что цены выше себестоимости плюс комиссия и логистика.")
     add("video-pdf", "Карточки и продвижение", "medium", "Загрузить видео установки и PDF для хитов", "Для Polo-sedan, Chery Tiggo 7 Pro, Chery Tiggo 4 Pro, Changan CS35: видео 30–60 секунд и инструкция.")
     add("reviews-push", "Карточки и продвижение", "high", "Набрать отзывы по хитам", "Вложение в посылку с просьбой оставить отзыв, отвечать на низкие оценки. Цель: 4.7+ и 30+ отзывов на хитах.")
+Q = M.get("quality")
+if Q:
+    if Q["discount_new"]:
+        ends = sorted({t["end_at"][:10] for t in Q["discount_new"]})[0]
+        add("discount-requests", "Цены", "high", f"Ответить на заявки на скидку ({len(Q['discount_new'])} шт., первая истекает {ends})",
+            "Покупатели просят скидку около 5% на 1 штуку. Открыть в кабинете Ozon → Акции → Заявки на скидку и принять или отклонить. Детали на странице «Качество».")
+    sc = next((r for r in Q["ratings"] if r["key"] == "rating_review_avg_score_total"), None)
+    if sc and Q["premium_threshold"] and sc["value"] < Q["premium_threshold"]:
+        add("rating-premium", "Карточки и продвижение", "medium", f"Довести оценку товаров с {sc['value']} до {Q['premium_threshold']}",
+            "Порог даёт статус Premium и доступ к аналитике запросов и отзывам. Нужны свежие хорошие отзывы: вложение в посылку и корректные описания без завышенных обещаний.")
+    for c in [x for x in Q["content"] if x["sales"] > 0 and x["rating"] < 85][:6]:
+        add(f"content-{c['offer_id']}", "Карточки и продвижение", "medium", f"Поднять контент-рейтинг {c['offer_id']} ({c['rating']})",
+            "Главное: " + "; ".join(m["what"] for m in c["improve"][:2]) + ".")
 add("acct-monthly", "Бухгалтерия", "low", "Сверить баланс и начисления за месяц",
     "Сверить раздел «Бухгалтерия» с отчётом о реализации в кабинете Ozon и выплатами на счёт.")
 (ROOT / "data/tasks_seed.json").write_text(json.dumps(tasks, ensure_ascii=False, indent=1), encoding="utf-8")
