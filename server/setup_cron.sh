@@ -6,6 +6,7 @@ T="$SERVER_SSH_USER@$SERVER_SSH_HOST"
 ssh "$T" 'mkdir -p /opt/ozon/app/data && (python3 -c 'import ensurepip' 2>/dev/null || DEBIAN_FRONTEND=noninteractive apt-get install -y -q python3-venv >/dev/null)'
 scp -q -r collector web audit "$T:/opt/ozon/app/"
 scp -q cost_prices.xlsx server/run_daily.sh "$T:/opt/ozon/app/"
+[ -f data/media_map.json ] && scp -q data/media_map.json "$T:/opt/ozon/app/data/media_map.json" || true
 grep -E '^OZON_SELLER_(CLIENT_ID|API_KEY)=' .env | ssh "$T" 'umask 077; cat > /opt/ozon/app/.env'
 ssh "$T" 'set -e; cd /opt/ozon/app; chmod 600 .env cost_prices.xlsx; chmod 700 run_daily.sh
 [ -d .venv ] || python3 -m venv .venv

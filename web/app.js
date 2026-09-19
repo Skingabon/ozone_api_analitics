@@ -6,7 +6,7 @@ const num = v => v == null ? "—" : Number(v).toLocaleString("ru-RU");
 const cls = v => v == null ? "" : v < 0 ? "bad" : v > 0 ? "good" : "";
 const page = document.body.dataset.page;
 
-const NAV = [["index.html", "Хаб", "hub"], ["dashboard.html", "Дашборд", "dashboard"], ["products.html", "Товары", "products"], ["cards.html", "Карточки", "cards"], ["ideas.html", "Идеи", "ideas"], ["quality.html", "Качество", "quality"], ["savings.html", "Экономия", "savings"], ["accounting.html", "Бухгалтерия", "accounting"]];
+const NAV = [["index.html", "Хаб", "hub"], ["dashboard.html", "Дашборд", "dashboard"], ["products.html", "Товары", "products"], ["cards.html", "Карточки", "cards"], ["ideas.html", "Идеи", "ideas"], ["quality.html", "Качество", "quality"], ["media.html", "Медиа", "media"], ["savings.html", "Экономия", "savings"], ["accounting.html", "Бухгалтерия", "accounting"]];
 function shell(title, upd) {
   $("#app").innerHTML = `<header><div class="wrap"><span class="logo">HomeHelp · Ozon</span><nav>${NAV.map(n => `<a href="${n[0]}" class="${n[2] === page ? "on" : ""}">${n[1]}</a>`).join("")}</nav><span class="upd">${upd || ""}</span></div></header><main><div class="wrap"><h1>${title}</h1><div id="c"></div></div></main>`;
 }
@@ -241,6 +241,25 @@ function quality(D) {
   if ($("#cp")) $("#cp").innerHTML = table(cpCols, Q.compensation, { sortable: false });
 }
 
+/* ---------- Медиа ---------- */
+function media(D) {
+  const M = D.media || {}, groups = Object.entries(M.groups || {});
+  const byOffer = {};
+  groups.forEach(([g, v]) => (v.offers || []).forEach(o => (byOffer[o] = byOffer[o] || []).push([g, v])));
+  const rows = D.products.slice().sort((a, b) => b.sales - a.sales);
+  const link = (g, v) => v.public_url ? `<a href="${esc(v.public_url)}" target="_blank" rel="noopener">${esc(g.replace(/_/g, " "))}</a>` : esc(g);
+  const cols = [{ h: "Товар", f: r => `<b>${esc(r.offer_id)}</b><div class="mut" style="font-size:12px">${esc(r.name.slice(0, 60))}</div>` },
+    { h: "Продажи", n: 1, f: r => rub(r.sales) },
+    { h: "Папки с фото и видео на Яндекс Диске", f: r => (byOffer[r.offer_id] || []).map(([g, v]) => link(g, v)).join("<br>") || `<span class=mut>нет материалов</span>` }];
+  const gCols = [{ h: "Папка", f: r => link(r[0], r[1]) }, { h: "Фото", n: 1, f: r => r[1].photos ?? "—" }, { h: "Видео", n: 1, f: r => r[1].videos ?? "—" },
+    { h: "Подходит для карточек", f: r => esc((r[1].offers || []).join(", ")) }];
+  $("#c").innerHTML = `<div class="card"><p style="font-size:14px">Фото и видео хранятся на Яндекс Диске (папка AVTO/TOVARY). Одни и те же материалы можно использовать в разных карточках. Ссылки на папки нужны вам для работы; <b>в описания и характеристики Ozon внешние ссылки вставлять нельзя</b> (нарушение правил площадки): на Ozon фото и видео загружаются файлами через блок «Фото» и «Озон.Видео».</p></div>
+  <div class="card"><h2>Материалы по карточкам</h2><div id="mt"></div></div>
+  <div class="card"><h2>Папки</h2><div id="mg"></div></div>`;
+  $("#mt").innerHTML = table(cols, rows, { sortable: false });
+  $("#mg").innerHTML = groups.length ? table(gCols, groups, { sortable: false }) : "<p class=mut>Папки ещё не опубликованы</p>";
+}
+
 /* ---------- Хаб ---------- */
 const TYPES_KEY = "type";
 async function hub(D) {
@@ -248,7 +267,7 @@ async function hub(D) {
   try { const r = await fetch("api/tasks", { cache: "no-store" }); if (!r.ok) throw 0; tasks = await r.json(); }
   catch { live = false; tasks = D.tasks_seed || []; }
   const types = [...new Set(tasks.map(t => t.type))].sort();
-  const reports = [["dashboard.html", "Дашборд", "Выручка, прибыль, расходы, отмены"], ["products.html", "Товары", "Прибыль и маржа по каждому артикулу"], ["cards.html", "Карточки и акции", "Аудит SEO, конкуренты, готовые тексты, цены в акциях"], ["ideas.html", "Идеи для печати", "Что ещё печатать и продавать: спрос, конкуренты, калькулятор"], ["quality.html", "Качество и рейтинг", "Рейтинг продавца, контент-рейтинг, заявки на скидку, компенсации"], ["savings.html", "Экономия расходов", "Комиссии, штрафы, логистика: сколько можно сэкономить"], ["accounting.html", "Бухгалтерия", "Баланс, движение денег, начисления"], ["accruals.csv", "Начисления (CSV)", "Выгрузка для учёта"], ["products.csv", "Прибыль по товарам (CSV)", "Выгрузка для Excel"]];
+  const reports = [["dashboard.html", "Дашборд", "Выручка, прибыль, расходы, отмены"], ["products.html", "Товары", "Прибыль и маржа по каждому артикулу"], ["cards.html", "Карточки и акции", "Аудит SEO, конкуренты, готовые тексты, цены в акциях"], ["ideas.html", "Идеи для печати", "Что ещё печатать и продавать: спрос, конкуренты, калькулятор"], ["quality.html", "Качество и рейтинг", "Рейтинг продавца, контент-рейтинг, заявки на скидку, компенсации"], ["media.html", "Фото и видео", "Папки Яндекс Диска по товарам"], ["savings.html", "Экономия расходов", "Комиссии, штрафы, логистика: сколько можно сэкономить"], ["accounting.html", "Бухгалтерия", "Баланс, движение денег, начисления"], ["accruals.csv", "Начисления (CSV)", "Выгрузка для учёта"], ["products.csv", "Прибыль по товарам (CSV)", "Выгрузка для Excel"]];
   $("#c").innerHTML = `<div class="grid reports" style="margin-bottom:18px">${reports.map(r => `<a href="${r[0]}"><b>${r[1]}</b><span>${r[2]}</span></a>`).join("")}</div>
   ${live ? "" : `<div class="banner">Сервер задач недоступен: список только для чтения, изменения не сохранятся.</div>`}
   <div class="card"><h2>Задачи и история</h2>
@@ -282,7 +301,7 @@ async function hub(D) {
   shell("Загрузка…");
   let D; try { D = await (await fetch("data.json", { cache: "no-store" })).json(); } catch { $("#c").innerHTML = "<p class=bad>Не удалось загрузить данные</p>"; return; }
   const upd = "Обновлено: " + new Date(D.generated_at).toLocaleString("ru-RU");
-  const T = { hub: "Хаб отчётов и задач", dashboard: "Дашборд магазина", products: "Товары и прибыль", accounting: "Бухгалтерия", savings: "Снижение расходов", cards: "Карточки: аудит и акции", ideas: "Что печатать и продавать", quality: "Качество и рейтинг" };
+  const T = { hub: "Хаб отчётов и задач", dashboard: "Дашборд магазина", products: "Товары и прибыль", accounting: "Бухгалтерия", savings: "Снижение расходов", cards: "Карточки: аудит и акции", ideas: "Что печатать и продавать", quality: "Качество и рейтинг", media: "Фото и видео товаров" };
   shell(T[page], upd);
-  ({ hub, dashboard, products, accounting, savings, cards, ideas, quality }[page])(D);
+  ({ hub, dashboard, products, accounting, savings, cards, ideas, quality, media }[page])(D);
 })();
