@@ -28,7 +28,18 @@ def call(path, body):
     return {"_error": 429}
 
 
+KEEP_ON_ERROR = {"queries", "queries_details", "analytics_data", "analytics_stocks"}   # платная аналитика: при отказе не затираем прошлые данные
+
+
 def save(name, obj):
+    err0 = obj.get("_error") if isinstance(obj, dict) else None
+    if err0 and name in KEEP_ON_ERROR and (RAW / f"{name}.json").exists():
+        try:
+            old = json.loads((RAW / f"{name}.json").read_text(encoding="utf-8"))
+            if not (isinstance(old, dict) and old.get("_error")):
+                print(f"{name}: ERROR {err0}, оставлены прошлые данные"); return
+        except Exception:
+            pass
     (RAW / f"{name}.json").write_text(json.dumps(obj, ensure_ascii=False), encoding="utf-8")
     err = obj.get("_error") if isinstance(obj, dict) else None
     print(f"{name}: {'ERROR ' + str(err) + ' ' + str(obj.get('_body','')) if err else 'ok'}")
