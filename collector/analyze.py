@@ -84,7 +84,7 @@ orders_day = Counter(p["in_process_at" if "in_process_at" in p else "created_at"
 tot_sales = sum(r["sales"] for r in rows)
 tot_profit = sum(r["profit"] or 0 for r in rows)
 oh = sum(overhead.values())
-ratios = [cost[o] / offers[o]["price"] for o in cost if offers[o]["price"]]
+ratios = [cost[o] / offers[o]["price"] for o in cost if o in offers and offers[o]["price"]]   # архивные товары из таблицы пропускаем
 bal = L("balance"); cf = L("cash_flow")["result"]["cash_flows"]
 metrics = {
     "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
