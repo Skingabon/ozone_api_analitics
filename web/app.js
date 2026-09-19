@@ -272,10 +272,11 @@ function promos(D) {
   const pCols = [{ h: "Товар", f: r => `<b>${esc(r.offer_id)}</b>`, k: r => r.offer_id }, { h: "Акция", f: r => esc(r.action) },
     { h: "Прайс", n: 1, f: r => rub(r.price), k: r => r.price }, { h: "В акции", n: 1, f: r => rub(r.action_price), k: r => r.action_price },
     { h: "Скидка", n: 1, f: r => r.discount + "%", c: r => r.discount >= 15 ? "bad" : "", k: r => r.discount },
+    { h: "Буст показов", n: 1, f: r => r.boost == null ? "—" : "+" + Math.round(r.boost) + "%", k: r => r.boost },
     { h: "Прибыль/шт по прайсу", n: 1, f: r => r.profit_list == null ? "—" : rub(r.profit_list) }, { h: "Прибыль/шт в акции", n: 1, f: r => r.profit_action == null ? "—" : rub(r.profit_action), c: r => r.profit_action != null && r.profit_action < 0 ? "bad" : "" },
     { h: "Режим", f: r => r.mode === "MANUAL" ? "вручную" : "авто" }, { h: "Совет", f: r => `${tag(r.advice)}<div style="font-size:12px">${esc(r.why)}</div>` }];
   const cCols = [{ h: "Товар", f: r => `<b>${esc(r.offer_id)}</b>`, k: r => r.offer_id }, { h: "Акция", f: r => esc(r.action) },
-    { h: "Прайс", n: 1, f: r => rub(r.price) }, { h: "Цена в акции", n: 1, f: r => rub(r.max_price) }, { h: "Скидка", n: 1, f: r => r.discount + "%" },
+    { h: "Прайс", n: 1, f: r => rub(r.price) }, { h: "Цена в акции", n: 1, f: r => rub(r.max_price) }, { h: "Скидка", n: 1, f: r => r.discount + "%" }, { h: "Буст", n: 1, f: r => r.boost == null ? "—" : "+" + Math.round(r.boost) + "%" },
     { h: "Совет", f: r => `${tag(r.advice)}<div style="font-size:12px">${esc(r.why)}</div>` }];
   const ch = P.changes, chTxt = x => `<li><b>${esc(x.offer_id)}</b>: ${esc(x.action)}</li>`;
   $("#c").innerHTML = `<div class="grid kpis">

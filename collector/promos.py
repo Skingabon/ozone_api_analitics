@@ -28,7 +28,7 @@ def economics(o, price, aprice):
             "profit_action": round(pa) if cost is not None else None, "has_cost": cost is not None}
 
 
-def advise_participant(o, price, aprice, mode):
+def advise_participant(o, price, aprice, mode, boost=None):
     disc = 1 - aprice / price if price else 0
     e = economics(o, price, aprice); units = rows.get(o, {}).get("units", 0)
     if e["profit_action"] is not None and e["profit_action"] < 0:
@@ -38,19 +38,23 @@ def advise_participant(o, price, aprice, mode):
         if units <= 3: return "remove", f"Убрать: {why}, продаж за 30 дней всего {units:.0f}"
         if e["profit_list"] and e["profit_action"] < MIN_KEEP * e["profit_list"]: return "remove", f"Убрать: {why}; прибыль на штуке падает более чем на 30%"
         return "check", f"Проверить: {why}. Оставляйте, только если акция реально даёт рост заказов"
-    if disc >= SOFT: return "check", f"Проверить: скидка {disc*100:.0f}%, потеря {e['net_list']-e['net_action']} ₽ на штуке"
-    return "keep", "Оставить: скидка небольшая, даёт видимость"
+    bt = f", буст показов +{boost:.0f}%" if boost else ""
+    if disc >= SOFT and boost and boost >= 2.5 * disc * 100: return "keep", f"Оставить: скидка {disc*100:.0f}% (потеря {e['net_list']-e['net_action']} ₽ на штуке){bt}. Буст заметно больше скидки"
+    if disc >= SOFT: return "check", f"Проверить: скидка {disc*100:.0f}%, потеря {e['net_list']-e['net_action']} ₽ на штуке{bt}"
+    return "keep", "Оставить: скидка небольшая, даёт видимость" + (f" (буст +{boost:.0f}%)" if boost else "")
 
 
-def advise_candidate(o, price, max_price, action_type):
+def advise_candidate(o, price, max_price, action_type, boost=None):
     if not price or not max_price: return "skip", "Нет данных о цене"
     disc = 1 - max_price / price
     e = economics(o, price, max_price)
     if disc <= 0: return "join", "Участвовать: цена акции не ниже вашей"
     if disc >= DEEP: return "skip", f"Не участвовать: скидка до {disc*100:.0f}% слишком глубокая"
     if e["profit_action"] is not None and e["profit_action"] < 0: return "skip", "Не участвовать: продажа в убыток"
-    if disc <= SOFT: return "join", f"Участвовать: скидка {disc*100:.0f}% почти незаметна, даёт видимость"
-    return "maybe", f"На ваше усмотрение: скидка {disc*100:.0f}%, потеря {e['net_list']-e['net_action']} ₽ на штуке"
+    bt = f", буст +{boost:.0f}%" if boost else ""
+    if disc <= SOFT: return "join", f"Участвовать: скидка {disc*100:.0f}% почти незаметна, даёт видимость{bt}"
+    if boost and disc <= 0.10 and boost >= 2.5 * disc * 100: return "join", f"Участвовать: скидка {disc*100:.0f}% при бусте +{boost:.0f}% (потеря {e['net_list']-e['net_action']} ₽ на штуке)"
+    return "maybe", f"На ваше усмотрение: скидка {disc*100:.0f}%, потеря {e['net_list']-e['net_action']} ₽ на штуке{bt}"
 
 
 # журнал автоочистки за сегодня: эти участия уже удалены после сбора данных, из отчёта о текущем участии исключаем
@@ -68,16 +72,17 @@ for aid, d in detail.items():
     for p in ps:
         o = info.get(p["id"], {}).get("offer_id", str(p["id"])); price = float(p["price"]); ap = float(p["action_price"])
         if f"{o}|{aid}" in cleaned_keys: now.add(f"{o}|{aid}|c"); continue   # уже убрано автоочисткой
-        adv, why = advise_participant(o, price, ap, p.get("add_mode"))
+        adv, why = advise_participant(o, price, ap, p.get("add_mode"), p.get("current_boost"))
         e = economics(o, price, ap); deep += adv == "remove"
         part.append({"offer_id": o, "action": a["title"].strip(), "action_id": int(aid), "price": price, "action_price": ap,
-                     "discount": round((1 - ap / price) * 100) if price else 0, "mode": p.get("add_mode"), "advice": adv, "why": why, **e})
+                     "discount": round((1 - ap / price) * 100) if price else 0, "mode": p.get("add_mode"), "boost": p.get("current_boost"),
+                     "boost_min": p.get("min_boost"), "boost_max": p.get("max_boost"), "advice": adv, "why": why, **e})
         now.add(f"{o}|{aid}")
     for p in cs:
         o = info.get(p["id"], {}).get("offer_id", str(p["id"])); price = float(p["price"]); mp = float(p.get("max_action_price") or 0)
-        adv, why = advise_candidate(o, price, mp, a.get("action_type"))
+        adv, why = advise_candidate(o, price, mp, a.get("action_type"), p.get("current_boost"))
         cand.append({"offer_id": o, "action": a["title"].strip(), "action_id": int(aid), "price": price, "max_price": mp,
-                     "discount": round((1 - mp / price) * 100) if price and mp else 0, "advice": adv, "why": why})
+                     "discount": round((1 - mp / price) * 100) if price and mp else 0, "boost": p.get("current_boost"), "advice": adv, "why": why})
     actions.append({"id": int(aid), "title": a["title"].strip(), "type": a.get("action_type"), "start": (a.get("date_start") or "")[:10], "end": (a.get("date_end") or "")[:10],
                     "participating": a.get("is_participating"), "in": len(ps), "potential": len(cs), "remove_advised": deep})
 
@@ -102,6 +107,6 @@ M["promos"] = {"actions": sorted(actions, key=lambda x: -x["in"]), "participatio
                "kpi": {"participations": len(part), "products": len({p["offer_id"] for p in part}), "avg_discount": avg,
                        "remove": len(rm), "remove_products": len({p["offer_id"] for p in rm}), "join": len(jn)},
                "autoclean": {"enabled": True, "threshold": 20, "last": cleanup_log.get("date"), "error": cleanup_log.get("error"), "history": cleanup_log.get("history", [])[-14:]},
-               "note": "Рекомендации считаются по вашим себестоимостям, комиссии Ozon и логистике на единицу; эффект акции на объём заказов Ozon не показывает."}
+               "note": "Рекомендации считаются по вашим себестоимостям, комиссии Ozon и логистике на единицу; эффект акции на объём заказов Ozon не показывает. Буст: на сколько процентов Ozon усиливает показ товара в этой акции (данные Ozon)."}
 (ROOT / "data/metrics.json").write_text(json.dumps(M, ensure_ascii=False), encoding="utf-8")
 print("promos ok:", M["promos"]["kpi"], "| изменения:", len(changes["added"]), "добавлено,", len(changes["removed"]), "убрано")
