@@ -81,6 +81,19 @@ if Q:
     for c in [x for x in Q["content"] if x["sales"] > 0 and x["rating"] < 85][:6]:
         add(f"content-{c['offer_id']}", "Карточки и продвижение", "medium", f"Поднять контент-рейтинг {c['offer_id']} ({c['rating']})",
             "Главное: " + "; ".join(m["what"] for m in c["improve"][:2]) + ".")
+PR = M.get("promos")
+if PR:
+    rm = sorted({p["offer_id"] for p in PR["participation"] if p["advice"] == "remove"})
+    if rm:
+        add("promo-remove", "Цены", "high", f"Убрать из акций: {len(rm)} тов. с невыгодной скидкой",
+            "Советую убрать: " + ", ".join(rm) + ". Детали и причины на странице «Акции».")
+    jn = sorted({c["offer_id"] for c in PR["candidates"] if c["advice"] == "join"})
+    if jn:
+        add("promo-join", "Цены", "low", f"Можно подключить к акциям с небольшой скидкой ({len(jn)} тов.)",
+            "Скидка почти незаметна, а видимость выше: " + ", ".join(jn[:12]) + ". Список на странице «Акции».")
+    if PR["changes"]["added"]:
+        add("promo-readded", "Цены", "high", f"Ozon вернул товары в акции ({len(PR['changes']['added'])} шт.)",
+            "С прошлой проверки добавлены: " + ", ".join(f"{x['offer_id']} ({x['action'][:24]})" for x in PR["changes"]["added"][:8]) + ".")
 add("acct-monthly", "Бухгалтерия", "low", "Сверить баланс и начисления за месяц",
     "Сверить раздел «Бухгалтерия» с отчётом о реализации в кабинете Ozon и выплатами на счёт.")
 (ROOT / "data/tasks_seed.json").write_text(json.dumps(tasks, ensure_ascii=False, indent=1), encoding="utf-8")

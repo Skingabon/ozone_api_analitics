@@ -7,12 +7,12 @@ OUT = ROOT / "site"
 shutil.rmtree(OUT, ignore_errors=True); OUT.mkdir()
 for f in ("style.css", "app.js"):
     shutil.copy(ROOT / "web" / f, OUT / f)
-PAGES = {"index": "hub", "dashboard": "dashboard", "products": "products", "accounting": "accounting", "savings": "savings", "cards": "cards", "ideas": "ideas", "quality": "quality", "media": "media"}
+PAGES = {"index": "hub", "dashboard": "dashboard", "products": "products", "accounting": "accounting", "savings": "savings", "cards": "cards", "ideas": "ideas", "quality": "quality", "media": "media", "promos": "promos"}
 tpl = ('<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
        '<meta name="robots" content="noindex"><title>Ozon · {t}</title><link rel="stylesheet" href="style.css"></head>'
        '<body data-page="{p}"><div id="app"></div><script src="app.js"></script></body></html>')
 for name, p in PAGES.items():
-    (OUT / f"{name}.html").write_text(tpl.format(t={"hub": "Хаб", "dashboard": "Дашборд", "products": "Товары", "accounting": "Бухгалтерия", "savings": "Экономия", "cards": "Карточки", "ideas": "Идеи", "quality": "Качество", "media": "Медиа"}[p], p=p), encoding="utf-8")
+    (OUT / f"{name}.html").write_text(tpl.format(t={"hub": "Хаб", "dashboard": "Дашборд", "products": "Товары", "accounting": "Бухгалтерия", "savings": "Экономия", "cards": "Карточки", "ideas": "Идеи", "quality": "Качество", "media": "Медиа", "promos": "Акции"}[p], p=p), encoding="utf-8")
 
 M = json.load(open(ROOT / "data/metrics.json", encoding="utf-8"))
 M["ideas"] = json.load(open(ROOT / "audit/ideas.json", encoding="utf-8"))

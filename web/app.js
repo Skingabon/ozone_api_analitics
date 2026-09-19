@@ -6,7 +6,7 @@ const num = v => v == null ? "—" : Number(v).toLocaleString("ru-RU");
 const cls = v => v == null ? "" : v < 0 ? "bad" : v > 0 ? "good" : "";
 const page = document.body.dataset.page;
 
-const NAV = [["index.html", "Хаб", "hub"], ["dashboard.html", "Дашборд", "dashboard"], ["products.html", "Товары", "products"], ["cards.html", "Карточки", "cards"], ["ideas.html", "Идеи", "ideas"], ["quality.html", "Качество", "quality"], ["media.html", "Медиа", "media"], ["savings.html", "Экономия", "savings"], ["accounting.html", "Бухгалтерия", "accounting"]];
+const NAV = [["index.html", "Хаб", "hub"], ["dashboard.html", "Дашборд", "dashboard"], ["products.html", "Товары", "products"], ["cards.html", "Карточки", "cards"], ["ideas.html", "Идеи", "ideas"], ["quality.html", "Качество", "quality"], ["media.html", "Медиа", "media"], ["promos.html", "Акции", "promos"], ["savings.html", "Экономия", "savings"], ["accounting.html", "Бухгалтерия", "accounting"]];
 function shell(title, upd) {
   $("#app").innerHTML = `<header><div class="wrap"><span class="logo">HomeHelp · Ozon</span><nav>${NAV.map(n => `<a href="${n[0]}" class="${n[2] === page ? "on" : ""}">${n[1]}</a>`).join("")}</nav><span class="upd">${upd || ""}</span></div></header><main><div class="wrap"><h1>${title}</h1><div id="c"></div></div></main>`;
 }
@@ -260,6 +260,36 @@ function media(D) {
   $("#mg").innerHTML = groups.length ? table(gCols, groups, { sortable: false }) : "<p class=mut>Папки ещё не опубликованы</p>";
 }
 
+/* ---------- Акции ---------- */
+function promos(D) {
+  const P = D.promos, K = P.kpi;
+  const adv = { remove: ["Убрать", "bad"], keep: ["Оставить", "good"], check: ["Проверить", "warn"], join: ["Участвовать", "good"], skip: ["Не участвовать", "bad"], maybe: ["На ваше усмотрение", "warn"] };
+  const tag = a => `<span class="${adv[a][1]}"><b>${adv[a][0]}</b></span>`;
+  const aCols = [{ h: "Акция", f: r => `<b>${esc(r.title)}</b><div class="mut" style="font-size:12px">${esc(r.start)} — ${esc(r.end)}</div>` },
+    { h: "Участвуют", n: 1, f: r => r.in }, { h: "Доступно ещё", n: 1, f: r => r.potential },
+    { h: "Советую убрать", n: 1, f: r => r.remove_advised, c: r => r.remove_advised ? "bad" : "" }];
+  const pCols = [{ h: "Товар", f: r => `<b>${esc(r.offer_id)}</b>`, k: r => r.offer_id }, { h: "Акция", f: r => esc(r.action) },
+    { h: "Прайс", n: 1, f: r => rub(r.price), k: r => r.price }, { h: "В акции", n: 1, f: r => rub(r.action_price), k: r => r.action_price },
+    { h: "Скидка", n: 1, f: r => r.discount + "%", c: r => r.discount >= 15 ? "bad" : "", k: r => r.discount },
+    { h: "Прибыль/шт по прайсу", n: 1, f: r => r.profit_list == null ? "—" : rub(r.profit_list) }, { h: "Прибыль/шт в акции", n: 1, f: r => r.profit_action == null ? "—" : rub(r.profit_action), c: r => r.profit_action != null && r.profit_action < 0 ? "bad" : "" },
+    { h: "Режим", f: r => r.mode === "MANUAL" ? "вручную" : "авто" }, { h: "Совет", f: r => `${tag(r.advice)}<div style="font-size:12px">${esc(r.why)}</div>` }];
+  const cCols = [{ h: "Товар", f: r => `<b>${esc(r.offer_id)}</b>`, k: r => r.offer_id }, { h: "Акция", f: r => esc(r.action) },
+    { h: "Прайс", n: 1, f: r => rub(r.price) }, { h: "Цена в акции", n: 1, f: r => rub(r.max_price) }, { h: "Скидка", n: 1, f: r => r.discount + "%" },
+    { h: "Совет", f: r => `${tag(r.advice)}<div style="font-size:12px">${esc(r.why)}</div>` }];
+  const ch = P.changes, chTxt = x => `<li><b>${esc(x.offer_id)}</b>: ${esc(x.action)}</li>`;
+  $("#c").innerHTML = `<div class="grid kpis">
+    ${kpi("Товаров в акциях", K.products, `${K.participations} участий, средняя скидка ${K.avg_discount}%`, K.products ? "warn" : "good")}
+    ${kpi("Советую убрать", K.remove_products, `${K.remove} участий с невыгодной скидкой`, K.remove ? "bad" : "good")}
+    ${kpi("Стоит подключить", K.join, "акции с небольшой скидкой", K.join ? "good" : "")}</div>
+  ${ch.since ? `<div class="card"><h2>Что изменилось с ${esc(ch.since)}</h2>${ch.added.length ? `<p class="bad"><b>Добавлено (Ozon мог добавить сам):</b></p><ul>${ch.added.map(chTxt).join("")}</ul>` : ""}${ch.removed.length ? `<p class="good"><b>Убрано:</b></p><ul>${ch.removed.map(chTxt).join("")}</ul>` : ""}${!ch.added.length && !ch.removed.length ? "<p class=mut>Изменений нет.</p>" : ""}</div>` : ""}
+  <div class="card"><h2>Акции Ozon</h2><div id="ta"></div></div>
+  <div class="card"><h2>Где товары участвуют сейчас</h2>${P.participation.length ? `<div id="tp"></div>` : "<p class=good>Ни один товар не участвует в акциях.</p>"}<p class="note">${esc(P.note)} Порог совета «убрать»: скидка от 15% и продажи не окупают потерю, либо продажа в убыток.</p></div>
+  <div class="card"><h2>Куда можно вступить</h2><div id="tc"></div></div>`;
+  $("#ta").innerHTML = table(aCols, P.actions, { sortable: false });
+  if ($("#tp")) { const rp = P.participation.slice(); const dp = () => { $("#tp").innerHTML = table(pCols, rp); makeSortable($("#tp"), pCols, rp, dp); }; dp(); }
+  const rc = P.candidates.filter(c => c.advice !== "skip" || c.discount < 40); const dc = () => { $("#tc").innerHTML = table(cCols, rc); }; dc();
+}
+
 /* ---------- Хаб ---------- */
 const TYPES_KEY = "type";
 async function hub(D) {
@@ -267,7 +297,7 @@ async function hub(D) {
   try { const r = await fetch("api/tasks", { cache: "no-store" }); if (!r.ok) throw 0; tasks = await r.json(); }
   catch { live = false; tasks = D.tasks_seed || []; }
   const types = [...new Set(tasks.map(t => t.type))].sort();
-  const reports = [["dashboard.html", "Дашборд", "Выручка, прибыль, расходы, отмены"], ["products.html", "Товары", "Прибыль и маржа по каждому артикулу"], ["cards.html", "Карточки и акции", "Аудит SEO, конкуренты, готовые тексты, цены в акциях"], ["ideas.html", "Идеи для печати", "Что ещё печатать и продавать: спрос, конкуренты, калькулятор"], ["quality.html", "Качество и рейтинг", "Рейтинг продавца, контент-рейтинг, заявки на скидку, компенсации"], ["media.html", "Фото и видео", "Папки Яндекс Диска по товарам"], ["savings.html", "Экономия расходов", "Комиссии, штрафы, логистика: сколько можно сэкономить"], ["accounting.html", "Бухгалтерия", "Баланс, движение денег, начисления"], ["accruals.csv", "Начисления (CSV)", "Выгрузка для учёта"], ["products.csv", "Прибыль по товарам (CSV)", "Выгрузка для Excel"]];
+  const reports = [["dashboard.html", "Дашборд", "Выручка, прибыль, расходы, отмены"], ["products.html", "Товары", "Прибыль и маржа по каждому артикулу"], ["cards.html", "Карточки и акции", "Аудит SEO, конкуренты, готовые тексты, цены в акциях"], ["ideas.html", "Идеи для печати", "Что ещё печатать и продавать: спрос, конкуренты, калькулятор"], ["quality.html", "Качество и рейтинг", "Рейтинг продавца, контент-рейтинг, заявки на скидку, компенсации"], ["media.html", "Фото и видео", "Папки Яндекс Диска по товарам"], ["promos.html", "Акции", "Где товары в акциях, что убрать, куда вступить (обновляется ежедневно)"], ["savings.html", "Экономия расходов", "Комиссии, штрафы, логистика: сколько можно сэкономить"], ["accounting.html", "Бухгалтерия", "Баланс, движение денег, начисления"], ["accruals.csv", "Начисления (CSV)", "Выгрузка для учёта"], ["products.csv", "Прибыль по товарам (CSV)", "Выгрузка для Excel"]];
   $("#c").innerHTML = `<div class="grid reports" style="margin-bottom:18px">${reports.map(r => `<a href="${r[0]}"><b>${r[1]}</b><span>${r[2]}</span></a>`).join("")}</div>
   ${live ? "" : `<div class="banner">Сервер задач недоступен: список только для чтения, изменения не сохранятся.</div>`}
   <div class="card"><h2>Задачи и история</h2>
@@ -301,7 +331,7 @@ async function hub(D) {
   shell("Загрузка…");
   let D; try { D = await (await fetch("data.json", { cache: "no-store" })).json(); } catch { $("#c").innerHTML = "<p class=bad>Не удалось загрузить данные</p>"; return; }
   const upd = "Обновлено: " + new Date(D.generated_at).toLocaleString("ru-RU");
-  const T = { hub: "Хаб отчётов и задач", dashboard: "Дашборд магазина", products: "Товары и прибыль", accounting: "Бухгалтерия", savings: "Снижение расходов", cards: "Карточки: аудит и акции", ideas: "Что печатать и продавать", quality: "Качество и рейтинг", media: "Фото и видео товаров" };
+  const T = { hub: "Хаб отчётов и задач", dashboard: "Дашборд магазина", products: "Товары и прибыль", accounting: "Бухгалтерия", savings: "Снижение расходов", cards: "Карточки: аудит и акции", ideas: "Что печатать и продавать", quality: "Качество и рейтинг", media: "Фото и видео товаров", promos: "Акции Ozon" };
   shell(T[page], upd);
-  ({ hub, dashboard, products, accounting, savings, cards, ideas, quality, media }[page])(D);
+  ({ hub, dashboard, products, accounting, savings, cards, ideas, quality, media, promos }[page])(D);
 })();
