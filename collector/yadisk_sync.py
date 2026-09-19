@@ -111,11 +111,15 @@ def main(mode):
     if mode == "publish":
         out = {}
         for g in plan:
-            r = req("PUT", "/resources/publish", params={"path": f"{BASE}/{g}"})
-            info = req("GET", "/resources", params={"path": f"{BASE}/{g}", "limit": 200}).json()
-            emb = info.get("_embedded", {}).get("items", [])
-            out[g] = {"public_url": info.get("public_url"), "offers": GROUPS[g][1], "public_key": info.get("public_key")}
-            print(g, out[g]["public_url"])
+            req("PUT", "/resources/publish", params={"path": f"{BASE}/{g}"})
+            info = req("GET", "/resources", params={"path": f"{BASE}/{g}", "fields": "public_url,public_key"}).json()
+            cnt = {}
+            for sub in ("Foto", "Video"):
+                x = req("GET", "/resources", params={"path": f"{BASE}/{g}/{sub}", "limit": 200, "fields": "_embedded.items.name,_embedded.items.size"}).json()
+                cnt[sub] = x.get("_embedded", {}).get("items", [])
+            out[g] = {"public_url": info.get("public_url"), "offers": GROUPS[g][1], "photos": len(cnt["Foto"]), "videos": len(cnt["Video"]),
+                      "video_files": [f"{i['name']} ({i['size']/1e6:.0f} МБ)" for i in cnt["Video"]]}
+            print(f"{g:32} фото {out[g]['photos']:3} видео {out[g]['videos']}  {out[g]['public_url']}")
         (ROOT / "data/media_map.json").write_text(json.dumps(out, ensure_ascii=False, indent=1), encoding="utf-8")
 
 
