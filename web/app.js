@@ -303,14 +303,14 @@ function prices(D) {
     { h: "С учётом акций", n: 1, f: r => rub(r.effective), c: r => r.effective < r.price * 0.98 ? "bad" : "", k: r => r.effective },
     { h: "Покупатель платит (ср.)", n: 1, f: r => r.buyer_paid == null ? "—" : rub(r.buyer_paid), k: r => r.buyer_paid },
     { h: "Баллы Ozon (ср.)", n: 1, f: r => r.ozon_points == null ? "—" : rub(r.ozon_points) + ` <span class="mut">(${r.points_share}%)</span>`, k: r => r.ozon_points },
-    { h: "Автодобавление в акции", f: r => r.auto_add ? "<span class=warn>включено</span>" : "<span class=good>выключено</span>", k: r => r.auto_add ? 1 : 0 },
+    { h: "Автодобавление в акции", f: r => r.auto_add ? (r.auto_add_keep ? "<span class=good>включено (намеренно)</span>" : "<span class=warn>включено</span>") : "<span class=mut>выключено</span>", k: r => r.auto_add ? 1 : 0 },
     { h: "Безубыточная", n: 1, f: r => r.breakeven == null ? "—" : rub(r.breakeven), c: r => r.breakeven != null && r.price < r.breakeven ? "bad" : "", k: r => r.breakeven },
     { h: "Цена для маржи 30%", n: 1, f: r => r.price_m30 == null ? "—" : rub(r.price_m30), k: r => r.price_m30 },
     { h: "Прибыль/шт", n: 1, f: r => r.profit_unit == null ? "—" : rub(r.profit_unit), c: r => r.profit_unit != null && r.profit_unit < 0 ? "bad" : "", k: r => r.profit_unit },
     { h: "Заметки", f: r => r.notes.map(n => `<div style="font-size:12px">${esc(n)}</div>`).join("") }];
   $("#c").innerHTML = `<div class="grid kpis">
     ${kpi("Товаров", K.products, "цены из API Ozon")}
-    ${kpi("Автодобавление в акции включено", `${K.auto_add} из ${K.products}`, "Ozon сам записывает такие товары в акции", K.auto_add ? "warn" : "good")}
+    ${kpi("Автодобавление в акции", `${K.auto_add} из ${K.products}`, K.auto_add_unwanted ? `${K.auto_add_unwanted} включено без вашего решения` : "включено только там, где выгоден буст", K.auto_add_unwanted ? "warn" : "good")}
     ${kpi("Баллы Ozon в цене покупателя", K.avg_points_share + "%", "в среднем по заказам: столько скидки платит Ozon", "")}
     ${kpi("Цена ниже безубыточной", K.below_breakeven, "с учётом себестоимости", K.below_breakeven ? "bad" : "good")}</div>
   <div class="card"><h2>Цены на товары</h2><div id="tp"></div><p class="note">${esc(P.note)} Безубыточная цена = (логистика + себестоимость) / (1 − комиссия). «Цена для маржи 30%» считается так же с запасом 30% от цены. Себестоимость взята из вашей таблицы.</p></div>`;

@@ -24,6 +24,9 @@ for a in L("accruals")["items"]:
         o = sku2o.get(int(p["sku"]))
         b = buy[o]; b["n"] += 1; b["seller"] += g("seller_price"); b["paid"] += g("sale_price"); b["points"] += g("bonus")
 
+try: KEEP_AUTO = set(json.load(open(ROOT / "audit/autoadd_keep.json", encoding="utf-8")))   # автодобавление оставлено намеренно (выгодный буст)
+except Exception: KEEP_AUTO = set()
+
 # участие в акциях (для «цена с учётом акций»)
 acts = {}
 for aid, d in L("actions_detail").items():
@@ -42,13 +45,14 @@ for x in L("prices")["items"]:
     p30 = (dl + (cost or 0)) / (1 - c - 0.30)            # цена для маржи 30%
     eff = min([price] + acts.get(o, []))                 # цена продавца с учётом акций
     notes = []
-    if pr.get("auto_add_to_ozon_actions_list_enabled"): notes.append("включено автодобавление в акции Ozon")
+    if pr.get("auto_add_to_ozon_actions_list_enabled"):
+        notes.append("автодобавление в акции оставлено намеренно (выгодный буст)" if o in KEEP_AUTO else "включено автодобавление в акции Ozon: Ozon сам вернёт товар в акции")
     if eff < price * 0.98: notes.append(f"в акциях цена {eff:.0f} ₽ вместо {price:.0f} ₽")
     if cost is not None and price < be: notes.append("цена ниже безубыточной")
     if pr.get("min_price") and float(pr["min_price"]) < price * 0.97: notes.append("минимальная цена ниже вашей: возможны автоскидки")
     out.append({"offer_id": o, "name": (info.get(o) or {}).get("name", ""), "stock": stocks.get(o, 0),
                 "price": price, "old_price": float(pr.get("old_price") or 0), "min_price": float(pr.get("min_price") or 0),
-                "effective": eff, "auto_add": bool(pr.get("auto_add_to_ozon_actions_list_enabled")), "index": (x.get("price_indexes") or {}).get("color_index"),
+                "effective": eff, "auto_add": bool(pr.get("auto_add_to_ozon_actions_list_enabled")), "auto_add_keep": o in KEEP_AUTO, "index": (x.get("price_indexes") or {}).get("color_index"),
                 "commission_pct": round(c * 100, 1), "delivery": round(dl), "orders": b["n"] if b else 0,
                 "buyer_paid": round(b["paid"] / b["n"]) if b else None, "ozon_points": round(b["points"] / b["n"]) if b else None,
                 "seller_price_avg": round(b["seller"] / b["n"]) if b else None,
@@ -57,7 +61,7 @@ for x in L("prices")["items"]:
                 "price_m30": round(p30) if cost is not None else None, "notes": notes})
 out.sort(key=lambda r: (-r["orders"], r["offer_id"]))
 paid = [r for r in out if r["orders"]]
-M["prices"] = {"rows": out, "kpi": {"products": len(out), "auto_add": sum(r["auto_add"] for r in out),
+M["prices"] = {"rows": out, "kpi": {"products": len(out), "auto_add": sum(r["auto_add"] for r in out), "auto_add_unwanted": sum(1 for r in out if r["auto_add"] and not r["auto_add_keep"]),
                "below_breakeven": sum(1 for r in out if "цена ниже безубыточной" in r["notes"]),
                "avg_points_share": round(sum(r["points_share"] for r in paid if r["points_share"] is not None) / max(len([r for r in paid if r["points_share"] is not None]), 1))},
                "note": "«Покупатель платит» и «Баллы Ozon» — средние значения по фактическим заказам за период. Ваша выручка с заказа равна «Вашей цене» (за вычетом комиссии и логистики), баллы за скидки финансирует Ozon."}

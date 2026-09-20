@@ -95,8 +95,8 @@ if PR:
             "С прошлой проверки добавлены: " + ", ".join(f"{x['offer_id']} ({x['action'][:24]})" for x in PR["changes"]["added"][:8]) + ".")
 PZ = M.get("prices")
 if PZ:
-    if PZ["kpi"]["auto_add"]:
-        add("auto-add-off", "Цены", "high", f"Отключить автодобавление в акции Ozon ({PZ['kpi']['auto_add']} тов.)",
+    if PZ["kpi"].get("auto_add_unwanted"):
+        add("auto-add-off", "Цены", "high", f"Автодобавление в акции снова включено у {PZ['kpi']['auto_add_unwanted']} тов.",
             "Пока эта настройка включена, Ozon сам возвращает товары в акции со скидкой. Отключение: кабинет → Цены и акции → выбрать товары → «Автоматически добавлять в акции Ozon» → выключить. Список на странице «Цены».")
     low = [r["offer_id"] for r in PZ["rows"] if r["breakeven"] and r["price"] < r["breakeven"]]
     if low:
