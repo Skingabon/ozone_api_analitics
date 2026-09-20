@@ -93,6 +93,15 @@ if PR:
     if PR["changes"]["added"]:
         add("promo-readded", "Цены", "medium", f"Ozon вернул товары в акции ({len(PR['changes']['added'])} шт.), автоочистка убрала скидки от 20%",
             "С прошлой проверки добавлены: " + ", ".join(f"{x['offer_id']} ({x['action'][:24]})" for x in PR["changes"]["added"][:8]) + ".")
+PZ = M.get("prices")
+if PZ:
+    if PZ["kpi"]["auto_add"]:
+        add("auto-add-off", "Цены", "high", f"Отключить автодобавление в акции Ozon ({PZ['kpi']['auto_add']} тов.)",
+            "Пока эта настройка включена, Ozon сам возвращает товары в акции со скидкой. Отключение: кабинет → Цены и акции → выбрать товары → «Автоматически добавлять в акции Ozon» → выключить. Список на странице «Цены».")
+    low = [r["offer_id"] for r in PZ["rows"] if r["breakeven"] and r["price"] < r["breakeven"]]
+    if low:
+        add("price-below-breakeven", "Цены", "high", f"Цена ниже безубыточной: {', '.join(low[:5])}",
+            "Продажа по этим ценам не покрывает комиссию, логистику и себестоимость. Безубыточная цена и цена для маржи 30% на странице «Цены».")
 add("acct-monthly", "Бухгалтерия", "low", "Сверить баланс и начисления за месяц",
     "Сверить раздел «Бухгалтерия» с отчётом о реализации в кабинете Ozon и выплатами на счёт.")
 (ROOT / "data/tasks_seed.json").write_text(json.dumps(tasks, ensure_ascii=False, indent=1), encoding="utf-8")

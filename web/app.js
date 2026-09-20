@@ -6,7 +6,7 @@ const num = v => v == null ? "—" : Number(v).toLocaleString("ru-RU");
 const cls = v => v == null ? "" : v < 0 ? "bad" : v > 0 ? "good" : "";
 const page = document.body.dataset.page;
 
-const NAV = [["index.html", "Хаб", "hub"], ["dashboard.html", "Дашборд", "dashboard"], ["products.html", "Товары", "products"], ["cards.html", "Карточки", "cards"], ["ideas.html", "Идеи", "ideas"], ["quality.html", "Качество", "quality"], ["media.html", "Медиа", "media"], ["promos.html", "Акции", "promos"], ["savings.html", "Экономия", "savings"], ["accounting.html", "Бухгалтерия", "accounting"]];
+const NAV = [["index.html", "Хаб", "hub"], ["dashboard.html", "Дашборд", "dashboard"], ["products.html", "Товары", "products"], ["cards.html", "Карточки", "cards"], ["ideas.html", "Идеи", "ideas"], ["quality.html", "Качество", "quality"], ["media.html", "Медиа", "media"], ["promos.html", "Акции", "promos"], ["prices.html", "Цены", "prices"], ["savings.html", "Экономия", "savings"], ["accounting.html", "Бухгалтерия", "accounting"]];
 function shell(title, upd) {
   $("#app").innerHTML = `<header><div class="wrap"><span class="logo">HomeHelp · Ozon</span><nav>${NAV.map(n => `<a href="${n[0]}" class="${n[2] === page ? "on" : ""}">${n[1]}</a>`).join("")}</nav><span class="upd">${upd || ""}</span></div></header><main><div class="wrap"><h1>${title}</h1><div id="c"></div></div></main>`;
 }
@@ -293,6 +293,30 @@ function promos(D) {
   const rc = P.candidates.filter(c => c.advice !== "skip" || c.discount < 40); const dc = () => { $("#tc").innerHTML = table(cCols, rc); }; dc();
 }
 
+/* ---------- Цены ---------- */
+function prices(D) {
+  const P = D.prices, K = P.kpi;
+  const rows = P.rows.slice();
+  const cols = [{ h: "Товар", f: r => `<b>${esc(r.offer_id)}</b>`, k: r => r.offer_id },
+    { h: "Ваша цена", n: 1, f: r => rub(r.price), k: r => r.price },
+    { h: "Зачёркнутая", n: 1, f: r => rub(r.old_price) }, { h: "Мин.", n: 1, f: r => rub(r.min_price) },
+    { h: "С учётом акций", n: 1, f: r => rub(r.effective), c: r => r.effective < r.price * 0.98 ? "bad" : "", k: r => r.effective },
+    { h: "Покупатель платит (ср.)", n: 1, f: r => r.buyer_paid == null ? "—" : rub(r.buyer_paid), k: r => r.buyer_paid },
+    { h: "Баллы Ozon (ср.)", n: 1, f: r => r.ozon_points == null ? "—" : rub(r.ozon_points) + ` <span class="mut">(${r.points_share}%)</span>`, k: r => r.ozon_points },
+    { h: "Автодобавление в акции", f: r => r.auto_add ? "<span class=warn>включено</span>" : "<span class=good>выключено</span>", k: r => r.auto_add ? 1 : 0 },
+    { h: "Безубыточная", n: 1, f: r => r.breakeven == null ? "—" : rub(r.breakeven), c: r => r.breakeven != null && r.price < r.breakeven ? "bad" : "", k: r => r.breakeven },
+    { h: "Цена для маржи 30%", n: 1, f: r => r.price_m30 == null ? "—" : rub(r.price_m30), k: r => r.price_m30 },
+    { h: "Прибыль/шт", n: 1, f: r => r.profit_unit == null ? "—" : rub(r.profit_unit), c: r => r.profit_unit != null && r.profit_unit < 0 ? "bad" : "", k: r => r.profit_unit },
+    { h: "Заметки", f: r => r.notes.map(n => `<div style="font-size:12px">${esc(n)}</div>`).join("") }];
+  $("#c").innerHTML = `<div class="grid kpis">
+    ${kpi("Товаров", K.products, "цены из API Ozon")}
+    ${kpi("Автодобавление в акции включено", `${K.auto_add} из ${K.products}`, "Ozon сам записывает такие товары в акции", K.auto_add ? "warn" : "good")}
+    ${kpi("Баллы Ozon в цене покупателя", K.avg_points_share + "%", "в среднем по заказам: столько скидки платит Ozon", "")}
+    ${kpi("Цена ниже безубыточной", K.below_breakeven, "с учётом себестоимости", K.below_breakeven ? "bad" : "good")}</div>
+  <div class="card"><h2>Цены на товары</h2><div id="tp"></div><p class="note">${esc(P.note)} Безубыточная цена = (логистика + себестоимость) / (1 − комиссия). «Цена для маржи 30%» считается так же с запасом 30% от цены. Себестоимость взята из вашей таблицы.</p></div>`;
+  const dr = () => { $("#tp").innerHTML = table(cols, rows); makeSortable($("#tp"), cols, rows, dr); }; dr();
+}
+
 /* ---------- Хаб ---------- */
 const TYPES_KEY = "type";
 async function hub(D) {
@@ -300,7 +324,7 @@ async function hub(D) {
   try { const r = await fetch("api/tasks", { cache: "no-store" }); if (!r.ok) throw 0; tasks = await r.json(); }
   catch { live = false; tasks = D.tasks_seed || []; }
   const types = [...new Set(tasks.map(t => t.type))].sort();
-  const reports = [["dashboard.html", "Дашборд", "Выручка, прибыль, расходы, отмены"], ["products.html", "Товары", "Прибыль и маржа по каждому артикулу"], ["cards.html", "Карточки и акции", "Аудит SEO, конкуренты, готовые тексты, цены в акциях"], ["ideas.html", "Идеи для печати", "Что ещё печатать и продавать: спрос, конкуренты, калькулятор"], ["quality.html", "Качество и рейтинг", "Рейтинг продавца, контент-рейтинг, заявки на скидку, компенсации"], ["media.html", "Фото и видео", "Папки Яндекс Диска по товарам"], ["promos.html", "Акции", "Где товары в акциях, что убрать, куда вступить (обновляется ежедневно)"], ["savings.html", "Экономия расходов", "Комиссии, штрафы, логистика: сколько можно сэкономить"], ["accounting.html", "Бухгалтерия", "Баланс, движение денег, начисления"], ["accruals.csv", "Начисления (CSV)", "Выгрузка для учёта"], ["products.csv", "Прибыль по товарам (CSV)", "Выгрузка для Excel"]];
+  const reports = [["dashboard.html", "Дашборд", "Выручка, прибыль, расходы, отмены"], ["products.html", "Товары", "Прибыль и маржа по каждому артикулу"], ["cards.html", "Карточки и акции", "Аудит SEO, конкуренты, готовые тексты, цены в акциях"], ["ideas.html", "Идеи для печати", "Что ещё печатать и продавать: спрос, конкуренты, калькулятор"], ["quality.html", "Качество и рейтинг", "Рейтинг продавца, контент-рейтинг, заявки на скидку, компенсации"], ["media.html", "Фото и видео", "Папки Яндекс Диска по товарам"], ["promos.html", "Акции", "Где товары в акциях, что убрать, куда вступить (обновляется ежедневно)"], ["prices.html", "Цены на товары", "Цена продавца, что платит покупатель, баллы Ozon, безубыточная цена"], ["savings.html", "Экономия расходов", "Комиссии, штрафы, логистика: сколько можно сэкономить"], ["accounting.html", "Бухгалтерия", "Баланс, движение денег, начисления"], ["accruals.csv", "Начисления (CSV)", "Выгрузка для учёта"], ["products.csv", "Прибыль по товарам (CSV)", "Выгрузка для Excel"]];
   $("#c").innerHTML = `<div class="grid reports" style="margin-bottom:18px">${reports.map(r => `<a href="${r[0]}"><b>${r[1]}</b><span>${r[2]}</span></a>`).join("")}</div>
   ${live ? "" : `<div class="banner">Сервер задач недоступен: список только для чтения, изменения не сохранятся.</div>`}
   <div class="card"><h2>Задачи и история</h2>
@@ -334,7 +358,7 @@ async function hub(D) {
   shell("Загрузка…");
   let D; try { D = await (await fetch("data.json", { cache: "no-store" })).json(); } catch { $("#c").innerHTML = "<p class=bad>Не удалось загрузить данные</p>"; return; }
   const upd = "Обновлено: " + new Date(D.generated_at).toLocaleString("ru-RU");
-  const T = { hub: "Хаб отчётов и задач", dashboard: "Дашборд магазина", products: "Товары и прибыль", accounting: "Бухгалтерия", savings: "Снижение расходов", cards: "Карточки: аудит и акции", ideas: "Что печатать и продавать", quality: "Качество и рейтинг", media: "Фото и видео товаров", promos: "Акции Ozon" };
+  const T = { hub: "Хаб отчётов и задач", dashboard: "Дашборд магазина", products: "Товары и прибыль", accounting: "Бухгалтерия", savings: "Снижение расходов", cards: "Карточки: аудит и акции", ideas: "Что печатать и продавать", quality: "Качество и рейтинг", media: "Фото и видео товаров", promos: "Акции Ozon", prices: "Цены на товары" };
   shell(T[page], upd);
-  ({ hub, dashboard, products, accounting, savings, cards, ideas, quality, media, promos }[page])(D);
+  ({ hub, dashboard, products, accounting, savings, cards, ideas, quality, media, promos, prices }[page])(D);
 })();

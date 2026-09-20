@@ -12,6 +12,7 @@ PY="$APP/.venv/bin/python"
 "$PY" collector/savings.py >/dev/null
 "$PY" collector/quality.py >/dev/null
 "$PY" collector/card_audit.py >/dev/null
+"$PY" collector/prices.py >/dev/null
 "$PY" collector/promos.py >/dev/null
 "$PY" collector/make_tasks.py >/dev/null
 "$PY" collector/build_site.py >/dev/null
