@@ -20,15 +20,28 @@ def save(tasks):
 
 
 def merged():
-    """Хранилище + новые авто-задачи из data.json (по id, статусы не затираются)."""
-    tasks = load(); ids = {t["id"] for t in tasks}
+    """Хранилище + авто-задачи из data.json. Новые добавляются, у открытых авто-задач обновляются текст и приоритет,
+    авто-задачи, которых больше нет в свежем расчёте (условие пропало), закрываются автоматически. Ручные задачи и статусы не трогаются."""
+    tasks = load(); by_id = {t["id"]: t for t in tasks}
     try:
         seed = json.loads(SEED.read_text(encoding="utf-8")).get("tasks_seed", [])
     except Exception:
         seed = []
-    new = [t for t in seed if t["id"] not in ids]
-    if new:
-        tasks += new; save(tasks)
+    changed = False
+    if seed:
+        ids = {t["id"] for t in seed}
+        for t in seed:
+            cur = by_id.get(t["id"])
+            if cur is None:
+                tasks.append(t); changed = True
+            elif not cur.get("done") and cur.get("source") == "auto":
+                for k in ("title", "description", "priority", "type"):
+                    if cur.get(k) != t.get(k): cur[k] = t.get(k); changed = True
+        today = date.today().isoformat()
+        for t in tasks:
+            if t.get("source") == "auto" and not t.get("done") and t["id"] not in ids:
+                t["done"] = True; t["done_at"] = today; t["auto_closed"] = True; changed = True
+    if changed: save(tasks)
     return tasks
 
 
