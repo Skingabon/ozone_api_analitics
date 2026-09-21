@@ -122,7 +122,7 @@ body = (f"<h1>Магазин HomeHelp на Ozon: отчёт</h1><div class='sub'
         f"{warn}<h2>1. Итоги периода</h2>{sec1}<h2>2. Продажи и прибыль по товарам</h2>{sec2}<h2>3. Что сделано</h2>{sec3}"
         f"<h2>4. Расходы и потенциал экономии</h2>{sec4}<h2>5. Акции и цены</h2>{sec5}<h2>6. Качество и рейтинг</h2>{sec6}"
         f"<h2>7. Открытые задачи</h2>{sec7}<h2>8. Что нужно от вас</h2>{sec8}")
-name = f"Otchet_HomeHelp_{datetime.now().strftime('%Y-%m-%d')}"
+name = f"Otchet_HomeHelp_kratko_{datetime.now().strftime('%Y-%m-%d')}"
 hp = OUT / f"{name}.html"; hp.write_text(f"<!doctype html><html lang='ru'><head><meta charset='utf-8'><title>Отчёт HomeHelp {date}</title><style>{CSS}</style></head><body>{body}</body></html>", encoding="utf-8")
 pdf = OUT / f"{name}.pdf"
 subprocess.run([CHROME, "--headless=new", "--disable-gpu", "--no-pdf-header-footer", f"--print-to-pdf={pdf}", "file:///" + str(hp).replace("\\", "/")], check=True, capture_output=True)

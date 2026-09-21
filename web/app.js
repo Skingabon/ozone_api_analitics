@@ -355,8 +355,9 @@ async function hub(D) {
 }
 
 (async () => {
-  shell("Загрузка…");
+  if (page !== "report") shell("Загрузка…");
   let D; try { D = await (await fetch("data.json", { cache: "no-store" })).json(); } catch { $("#c").innerHTML = "<p class=bad>Не удалось загрузить данные</p>"; return; }
+  if (page === "report") { await window.buildReport(D, { hub, dashboard, products, cards, ideas, quality, media, promos, prices, savings, accounting }); return; }
   const upd = "Обновлено: " + new Date(D.generated_at).toLocaleString("ru-RU");
   const T = { hub: "Хаб отчётов и задач", dashboard: "Дашборд магазина", products: "Товары и прибыль", accounting: "Бухгалтерия", savings: "Снижение расходов", cards: "Карточки: аудит и акции", ideas: "Что печатать и продавать", quality: "Качество и рейтинг", media: "Фото и видео товаров", promos: "Акции Ozon", prices: "Цены на товары" };
   shell(T[page], upd);

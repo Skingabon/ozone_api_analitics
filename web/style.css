@@ -39,3 +39,16 @@ tr.done td{opacity:.55}tr.done .t{text-decoration:line-through}
 .banner{border:1px solid var(--warn);color:var(--warn);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:14px}
 svg text{fill:var(--mut);font-size:11px}
 @media(max-width:600px){.upd{margin-left:0;width:100%}.kpi .v{font-size:22px}}
+
+/* печать и отчёт */
+.cover{padding:30px 0}.cover-h{font-weight:700;color:var(--acc);margin-bottom:6px}.toc{font:17px/2 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;margin:10px 0 0 22px}.toc a{font-weight:700}
+.rp{padding-top:8px}.rp-top{font-size:13px;margin-bottom:4px}.rp-top a{color:var(--acc)}
+@media print{
+  @page{size:A4 landscape;margin:11mm}
+  body{background:#fff;color:#000;font-size:12px}header,.filters,button{display:none!important}
+  .scroll{overflow:visible!important}.wrap{max-width:none;padding:0}
+  .rp{break-before:page}.cover{break-after:page}
+  .card{break-inside:auto;box-shadow:none}tr{break-inside:avoid}thead{display:table-header-group}
+  table{font-size:10.5px}th,td{padding:5px 6px}a{color:#0b5bd3;text-decoration:none}
+  h2{break-after:avoid}.grid.two{grid-template-columns:1fr 1fr}
+}

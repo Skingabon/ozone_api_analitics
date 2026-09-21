@@ -5,7 +5,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "site"
 shutil.rmtree(OUT, ignore_errors=True); OUT.mkdir()
-for f in ("style.css", "app.js"):
+for f in ("style.css", "app.js", "report.js"):
     shutil.copy(ROOT / "web" / f, OUT / f)
 PAGES = {"index": "hub", "dashboard": "dashboard", "products": "products", "accounting": "accounting", "savings": "savings", "cards": "cards", "ideas": "ideas", "quality": "quality", "media": "media", "promos": "promos", "prices": "prices"}
 tpl = ('<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
@@ -14,6 +14,7 @@ tpl = ('<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="v
 for name, p in PAGES.items():
     (OUT / f"{name}.html").write_text(tpl.format(t={"hub": "Хаб", "dashboard": "Дашборд", "products": "Товары", "accounting": "Бухгалтерия", "savings": "Экономия", "cards": "Карточки", "ideas": "Идеи", "quality": "Качество", "media": "Медиа", "promos": "Акции", "prices": "Цены"}[p], p=p), encoding="utf-8")
 
+(OUT / "report.html").write_text(tpl.format(t="Полный отчёт", p="report").replace('<script src="app.js"></script>', '<script src="app.js"></script><script src="report.js"></script>'), encoding="utf-8")
 M = json.load(open(ROOT / "data/metrics.json", encoding="utf-8"))
 M["ideas"] = json.load(open(ROOT / "audit/ideas.json", encoding="utf-8"))
 try:
