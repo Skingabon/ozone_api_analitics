@@ -5,6 +5,7 @@ APP=/opt/ozon/app
 cd "$APP"
 exec 9>/var/lock/ozon-update.lock; flock -n 9 || { echo "already running"; exit 0; }
 echo "=== $(date -Is) start"
+export PYTHONIOENCODING=utf-8   # cron даёт LANG=C: иначе кириллица в логе ломается, а apply_promos.py падает на «−»
 PY="$APP/.venv/bin/python"
 "$PY" collector/collect.py 30
 "$PY" collector/apply_promos.py --auto || echo "автоочистка акций не выполнена"

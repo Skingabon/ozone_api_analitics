@@ -5,6 +5,8 @@ from pathlib import Path
 import requests
 from dotenv import load_dotenv
 
+sys.stdout.reconfigure(encoding="utf-8")   # при редиректе (cron, лог-файл) Windows даёт cp1251 и кириллица превращается в кракозябры
+
 ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(ROOT / ".env")
 RAW = ROOT / "data" / "raw"
@@ -28,7 +30,8 @@ def call(path, body):
     return {"_error": 429}
 
 
-KEEP_ON_ERROR = {"queries", "queries_details", "analytics_data", "analytics_stocks"}   # платная аналитика: при отказе не затираем прошлые данные
+KEEP_ON_ERROR = {"queries", "queries_details", "analytics_data", "analytics_stocks",   # платная аналитика
+                 "fbo_postings", "fbs_postings"}                                       # отправления: при отказе API не затираем историю
 
 
 def save(name, obj):
@@ -65,20 +68,23 @@ save("prices", call("/v5/product/info/prices", {"filter": {"visibility": "ALL"},
 
 # отправления FBO / FBS
 def paged_postings(path, key):
-    out, offset = [], 0
+    out, cursor = [], ""
     while True:
-        body = {"dir": "ASC", "filter": {"since": iso(since), "to": iso(now)}, "limit": 1000, "offset": offset,
+        body = {"dir": "ASC", "filter": {"since": iso(since), "to": iso(now)}, "limit": 100,
                 "with": {"analytics_data": True, "financial_data": True}}
+        if cursor: body["cursor"] = cursor
         r = call(path, body)
         if "_error" in r: return r
-        res = r.get("result", r)
+        res = r.get("result", r)                      # fbo/v3 и fbs/v4 отдают postings без обёртки result
         rows = res if isinstance(res, list) else res.get(key, [])
         out += rows
-        if len(rows) < 1000: break
-        offset += 1000
+        if not isinstance(res, dict) or not res.get("has_next") or not rows: break
+        nxt = res.get("cursor") or ""
+        if not nxt or nxt == cursor: break            # offset новые методы игнорируют — только cursor
+        cursor = nxt
     return {"items": out}
-save("fbo_postings", paged_postings("/v2/posting/fbo/list", "postings"))
-save("fbs_postings", paged_postings("/v3/posting/fbs/list", "postings"))
+save("fbo_postings", paged_postings("/v3/posting/fbo/list", "postings"))
+save("fbs_postings", paged_postings("/v4/posting/fbs/list", "postings"))
 
 # финансы (v3 transaction устарели -> accrual/balance/cash-flow)
 save("accrual_types", call("/v1/finance/accrual/types", {}))
