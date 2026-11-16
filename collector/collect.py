@@ -19,15 +19,22 @@ since = now - timedelta(days=DAYS)
 iso = lambda d: d.strftime("%Y-%m-%dT%H:%M:%S.000Z")
 
 
-def call(path, body):
+def call(path, body, method="POST"):
+    err = {"_error": 429}
     for attempt in range(4):
-        r = requests.post(BASE + path, headers=H, json=body, timeout=60)
-        if r.status_code == 429:
-            time.sleep(2 ** attempt); continue
-        if r.status_code != 200:
-            return {"_error": r.status_code, "_body": r.text[:300]}
-        return r.json()
-    return {"_error": 429}
+        try:
+            r = requests.request(method, BASE + path, headers=H, json=body, timeout=60)
+        except requests.RequestException as e:                       # обрыв связи/DNS/таймаут: повторяем, а не роняем весь сбор
+            err = {"_error": 599, "_body": f"{type(e).__name__}: {e}"[:300]}
+        else:
+            if r.status_code == 429:
+                err = {"_error": 429, "_body": r.text[:300]}
+            elif r.status_code != 200:
+                return {"_error": r.status_code, "_body": r.text[:300]}
+            else:
+                return r.json()
+        if attempt < 3: time.sleep(2 ** attempt)
+    return err
 
 
 KEEP_ON_ERROR = {"queries", "queries_details", "analytics_data", "analytics_stocks",   # платная аналитика
@@ -118,7 +125,7 @@ for a in attrs.get("result", []):
     r = call("/v1/description-category/attribute", {"description_category_id": k[0], "type_id": k[1], "language": "DEFAULT"})
     meta[f"{k[0]}/{k[1]}"] = {str(x["id"]): {"name": x["name"], "required": x["is_required"]} for x in r.get("result", [])}
 save("attr_meta", meta)
-acts = requests.get(BASE + "/v1/actions", headers=H, timeout=60).json()
+acts = call("/v1/actions", None, method="GET")
 save("actions", acts)
 detail = {}
 for a in acts.get("result", []):
