@@ -17,6 +17,13 @@ cat > /etc/cron.d/ozon <<CRON
 CRON
 chmod 644 /etc/cron.d/ozon
 cat > /etc/logrotate.d/ozon <<LR
-/var/log/ozon-update.log { weekly rotate 4 compress missingok notifempty }
+/var/log/ozon-update.log {
+    weekly
+    rotate 4
+    compress
+    missingok
+    notifempty
+}
 LR
+chmod 644 /etc/logrotate.d/ozon
 echo installed'
