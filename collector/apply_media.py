@@ -13,6 +13,8 @@ import yadisk_sync as Y
 import apply_cards as A
 import make_infographics_all as MA
 
+sys.stdout.reconfigure(encoding="utf-8")   # cron/редирект: иначе cp1251 и кракозябры вместо кириллицы
+
 ROOT = Path(__file__).resolve().parent.parent
 FULL = {"Polo-sedan": "polo", "VT_CheryTigg07pro": "tiggo7pro", "Chery Tigo 4 PRO_VT": "tiggo4pro", "Ch35_vt01": "cs35"}
 DISK = "/AVTO/OZON"

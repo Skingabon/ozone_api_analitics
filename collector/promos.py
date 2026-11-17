@@ -2,9 +2,11 @@
 Данные: data/raw/actions.json, actions_detail.json (участники и кандидаты), metrics.json["cards"]["rows"] (комиссия, логистика, себестоимость).
 Изменения к предыдущему запуску (например, Ozon вернул товар в акцию автоматически) берутся из data/promo_snapshot.json.
 """
-import json
+import json, sys
 from datetime import date, datetime
 from pathlib import Path
+
+sys.stdout.reconfigure(encoding="utf-8")   # cron/редирект: иначе cp1251 и кракозябры вместо кириллицы
 
 ROOT = Path(__file__).resolve().parent.parent
 L = lambda n: json.load(open(ROOT / "data/raw" / f"{n}.json", encoding="utf-8"))

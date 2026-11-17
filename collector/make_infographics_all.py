@@ -11,6 +11,8 @@ import make_infographics as MI
 import apply_cards as A
 import apply_bushings as B
 
+sys.stdout.reconfigure(encoding="utf-8")   # cron/редирект: иначе cp1251 и кракозябры вместо кириллицы
+
 OUT = MI.ROOT / "data/img/ozon"; OUT.mkdir(parents=True, exist_ok=True)
 
 # offer: (что за деталь, автомобили (кратко), OEM, плашки, индекс фото на подложке)

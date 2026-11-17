@@ -11,6 +11,8 @@ from datetime import date
 from pathlib import Path
 import apply_cards as A
 
+sys.stdout.reconfigure(encoding="utf-8")   # cron/редирект: иначе cp1251, а «−» (U+2212) в нём вообще нет — скрипт падал
+
 ROOT = Path(__file__).resolve().parent.parent
 THRESHOLD = 0.20
 KEEP = set()   # артикулы, которые не трогаем (дополняется из audit/promo_keep.json)

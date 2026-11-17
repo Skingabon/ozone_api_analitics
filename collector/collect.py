@@ -20,15 +20,14 @@ iso = lambda d: d.strftime("%Y-%m-%dT%H:%M:%S.000Z")
 
 
 def call(path, body, method="POST"):
-    err = {"_error": 429}
     for attempt in range(4):
         try:
             r = requests.request(method, BASE + path, headers=H, json=body, timeout=60)
         except requests.RequestException as e:                       # обрыв связи/DNS/таймаут: повторяем, а не роняем весь сбор
             err = {"_error": 599, "_body": f"{type(e).__name__}: {e}"[:300]}
         else:
-            if r.status_code == 429:
-                err = {"_error": 429, "_body": r.text[:300]}
+            if r.status_code == 429 or r.status_code >= 500:         # лимит и сбои сервера Ozon транзиентные
+                err = {"_error": r.status_code, "_body": r.text[:300]}
             elif r.status_code != 200:
                 return {"_error": r.status_code, "_body": r.text[:300]}
             else:

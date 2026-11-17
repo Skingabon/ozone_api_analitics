@@ -1,9 +1,11 @@
 """Расчёт метрик магазина: data/raw + cost_prices.xlsx -> data/metrics.json."""
-import json
+import json, sys
 from collections import defaultdict, Counter
 from datetime import datetime, timezone
 from pathlib import Path
 from openpyxl import load_workbook
+
+sys.stdout.reconfigure(encoding="utf-8")   # cron/редирект: иначе cp1251 и кракозябры вместо кириллицы
 
 ROOT = Path(__file__).resolve().parent.parent
 L = lambda n: json.load(open(ROOT / "data/raw" / f"{n}.json", encoding="utf-8"))

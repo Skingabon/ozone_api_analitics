@@ -8,6 +8,8 @@
 import sys, time
 import apply_cards as A
 
+sys.stdout.reconfigure(encoding="utf-8")   # cron/редирект: иначе cp1251 и кракозябры вместо кириллицы
+
 CODE = "8708949909"
 NOT_STEERING = {"Largus-otopitel", "8201052009"}   # крепление мотора печки, заглушка кожуха ГРМ
 

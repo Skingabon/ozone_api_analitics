@@ -1,10 +1,12 @@
 """Шаблон себестоимости: cost_prices.xlsx (заполняется вручную, в git не попадает)."""
-import json
+import json, sys
 from collections import defaultdict
 from pathlib import Path
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment
 from openpyxl.worksheet.datavalidation import DataValidation
+
+sys.stdout.reconfigure(encoding="utf-8")   # cron/редирект: иначе cp1251 и кракозябры вместо кириллицы
 
 ROOT = Path(__file__).resolve().parent.parent
 L = lambda n: json.load(open(ROOT / "data/raw" / f"{n}.json", encoding="utf-8"))

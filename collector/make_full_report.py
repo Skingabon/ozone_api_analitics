@@ -8,6 +8,8 @@ import shutil, subprocess, sys, time
 from datetime import datetime
 from pathlib import Path
 
+sys.stdout.reconfigure(encoding="utf-8")   # cron/редирект: иначе cp1251 и кракозябры вместо кириллицы
+
 ROOT = Path(__file__).resolve().parent.parent
 SITE = ROOT / "site"; OUT = ROOT / "data/report"; OUT.mkdir(parents=True, exist_ok=True)
 CHROME = next(p for p in ("C:/Program Files/Google/Chrome/Application/chrome.exe", "C:/Program Files (x86)/Google/Chrome/Application/chrome.exe") if Path(p).exists())

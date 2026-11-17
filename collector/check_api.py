@@ -1,6 +1,8 @@
 """Проверка доступа к Ozon Seller API: читает OZON_SELLER_* из .env."""
-import asyncio
+import asyncio, sys
 from ozonapi import SellerAPI
+
+sys.stdout.reconfigure(encoding="utf-8")   # cron/редирект: иначе cp1251 и кракозябры вместо кириллицы
 
 
 async def main():

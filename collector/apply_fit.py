@@ -11,6 +11,8 @@ import json, re, sys, time
 from pathlib import Path
 import apply_cards as A
 
+sys.stdout.reconfigure(encoding="utf-8")   # cron/редирект: иначе cp1251 и кракозябры вместо кириллицы
+
 ROOT = Path(__file__).resolve().parent.parent
 CX = 100003           # complex_id блока «Применимость»
 TN_ID = 22232

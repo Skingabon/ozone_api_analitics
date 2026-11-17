@@ -7,6 +7,8 @@
 import json, re, sys, time
 import apply_cards as A
 
+sys.stdout.reconfigure(encoding="utf-8")   # cron/редирект: иначе cp1251 и кракозябры вместо кириллицы
+
 BR = "<br/>"
 def ul(items): return "<ul>" + "".join(f"<li>{i}</li>" for i in items) + "</ul>"
 def sec(title, body): return f"<b>{title}</b>{BR}{body}{BR}{BR}"

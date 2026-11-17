@@ -9,6 +9,8 @@ import sys, time
 import apply_cards as A
 import apply_texts as T
 
+sys.stdout.reconfigure(encoding="utf-8")   # cron/редирект: иначе cp1251 и кракозябры вместо кириллицы
+
 
 def tn(cat, typ, code):
     s, r = A.call("/v1/description-category/attribute/values/search", {"attribute_id": 22232, "description_category_id": cat, "type_id": typ, "value": code, "limit": 5})

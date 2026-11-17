@@ -9,6 +9,8 @@ import apply_cards as A
 import apply_fit as F
 import apply_texts as T
 
+sys.stdout.reconfigure(encoding="utf-8")   # cron/редирект: иначе cp1251 и кракозябры вместо кириллицы
+
 TEMP = "рабочая температура: от −40 до +120 °C"
 COUNTRY = "страна производства: Россия"
 

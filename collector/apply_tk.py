@@ -1,4 +1,4 @@
-"""TK_CheryTigo4PRO: главное фото и слайд совместимости на реальных фото толкателя из D:\3D\Auto\Chery Tiggo\Media\TK.
+r"""TK_CheryTigo4PRO: главное фото и слайд совместимости на реальных фото толкателя из D:\3D\Auto\Chery Tiggo\Media\TK.
 Прежние фото карточки остаются; новые: [главный слайд] + [совместимость] + прежние + [доп. фото толкателя]."""
 import shutil, sys, time
 from pathlib import Path
@@ -6,6 +6,8 @@ import apply_cards as A
 import apply_media as AM
 import make_infographics_all as MA
 import make_infographics as MI
+
+sys.stdout.reconfigure(encoding="utf-8")   # cron/редирект: иначе cp1251 и кракозябры вместо кириллицы
 
 O = "TK_CheryTigo4PRO"
 SRC = Path(r"D:\3D\Auto\Chery Tiggo\Media\TK")

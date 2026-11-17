@@ -1,7 +1,9 @@
 """Правила -> рекомендации (data/tasks_seed.json). id стабильные, чтобы статусы не сбрасывались."""
-import json
+import json, sys
 from datetime import date
 from pathlib import Path
+
+sys.stdout.reconfigure(encoding="utf-8")   # cron/редирект: иначе cp1251 и кракозябры вместо кириллицы
 
 ROOT = Path(__file__).resolve().parent.parent
 M = json.load(open(ROOT / "data/metrics.json", encoding="utf-8"))

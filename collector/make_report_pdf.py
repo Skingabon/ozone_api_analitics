@@ -4,9 +4,11 @@
 Берёт data/metrics.json (после конвейера), data/tasks_live.json (задачи с сайта; необязательно). HTML печатается в PDF через Chrome.
 Персональные данные (ИНН, ФИО, ключи, пароли) в отчёт не попадают.
 """
-import html, json, subprocess
+import html, json, subprocess, sys
 from datetime import datetime
 from pathlib import Path
+
+sys.stdout.reconfigure(encoding="utf-8")   # cron/редирект: иначе cp1251 и кракозябры вместо кириллицы
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "data/report"; OUT.mkdir(parents=True, exist_ok=True)

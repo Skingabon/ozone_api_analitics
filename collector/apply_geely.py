@@ -3,6 +3,8 @@ import sys, time
 import apply_cards as A
 import apply_texts as T
 
+sys.stdout.reconfigure(encoding="utf-8")   # cron/редирект: иначе cp1251 и кракозябры вместо кириллицы
+
 O = "VTTK_GeelyAtlas"
 NAME = "Втулка и толкатель рулевой рейки Geely Atlas (Джили Атлас), усиленные, капролон (полиамид)"
 TAGS = ("#втулка_рулевой_рейки #толкатель_рулевой_рейки #geely_atlas #джили_атлас #ремкомплект_рулевой_рейки #рулевая_рейка_geely "

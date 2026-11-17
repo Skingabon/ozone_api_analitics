@@ -1,7 +1,9 @@
 """Аудит карточек, экономика акций и рекомендации -> metrics["cards"] (после analyze.py)."""
-import json
+import json, sys
 from collections import defaultdict
 from pathlib import Path
+
+sys.stdout.reconfigure(encoding="utf-8")   # cron/редирект: иначе cp1251 и кракозябры вместо кириллицы
 
 ROOT = Path(__file__).resolve().parent.parent
 L = lambda n: json.load(open(ROOT / "data/raw" / f"{n}.json", encoding="utf-8"))
