@@ -88,7 +88,7 @@ tot_profit = sum(r["profit"] or 0 for r in rows)
 oh = sum(overhead.values())
 ratios = [cost[o] / offers[o]["price"] for o in cost if o in offers and offers[o]["price"]]   # архивные товары из таблицы пропускаем
 bal = L("balance"); cf = L("cash_flow")["result"]["cash_flows"]
-metrics = {
+base = {
     "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
     "kpi": {"orders": len(allp), "cancelled": sum(cancel.values()), "sales": round(tot_sales, 2),
             "profit_products": round(tot_profit, 2), "overhead": round(oh, 2), "profit_total": round(tot_profit + oh, 2),
@@ -102,7 +102,13 @@ metrics = {
     "cost_ratio": {"min": round(min(ratios), 4), "max": round(max(ratios), 4)} if ratios else None,
     "balance": bal, "cash_flow": cf,
 }
-(ROOT / "data/metrics.json").write_text(json.dumps(metrics, ensure_ascii=False), encoding="utf-8")
+mf = ROOT / "data/metrics.json"
+metrics = json.load(open(mf, encoding="utf-8")) if mf.exists() else {}
+kept = sorted(set(metrics) - set(base))
+metrics.update(base)          # свои ключи заменяем целиком, секции остальных скриптов не затираем
+mf.write_text(json.dumps(metrics, ensure_ascii=False), encoding="utf-8")
+if kept:
+    print("сохранены без пересчёта (их пишут savings/quality/card_audit/prices/promos):", ", ".join(kept))
 print("KPI", json.dumps(metrics["kpi"], ensure_ascii=False))
 print("cost/price ratio", metrics["cost_ratio"])
 print("overhead", metrics["overhead"]); print("cancel", metrics["cancel"])
