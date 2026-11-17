@@ -13,6 +13,7 @@ RAW = ROOT / "data" / "raw"
 RAW.mkdir(parents=True, exist_ok=True)
 H = {"Client-Id": os.environ["OZON_SELLER_CLIENT_ID"], "Api-Key": os.environ["OZON_SELLER_API_KEY"]}
 BASE = "https://api-seller.ozon.ru"
+TIMEOUT = (10, 60)   # (connect, read): успешное соединение укладывается в 0.2с, но SYN регулярно теряется — 60с на connect делали каждую неудачу минутной
 DAYS = int(sys.argv[1]) if len(sys.argv) > 1 else 30
 now = datetime.now(timezone.utc)
 since = now - timedelta(days=DAYS)
@@ -22,7 +23,7 @@ iso = lambda d: d.strftime("%Y-%m-%dT%H:%M:%S.000Z")
 def call(path, body, method="POST"):
     for attempt in range(4):
         try:
-            r = requests.request(method, BASE + path, headers=H, json=body, timeout=60)
+            r = requests.request(method, BASE + path, headers=H, json=body, timeout=TIMEOUT)
         except requests.RequestException as e:                       # обрыв связи/DNS/таймаут: повторяем, а не роняем весь сбор
             err = {"_error": 599, "_body": f"{type(e).__name__}: {e}"[:300]}
         else:
@@ -34,6 +35,25 @@ def call(path, body, method="POST"):
                 return r.json()
         if attempt < 3: time.sleep(2 ** attempt)
     return err
+
+
+def fetch(url):
+    """Скачивание файла по абсолютной ссылке (отчёты Ozon лежат на ir.ozone.ru, не под BASE).
+    Возвращает (bytes, None) при успехе и (None, причина) после исчерпания попыток."""
+    for attempt in range(4):
+        try:
+            r = requests.get(url, timeout=TIMEOUT)
+        except requests.RequestException as e:
+            err = f"{type(e).__name__}: {e}"[:300]
+        else:
+            if r.status_code == 429 or r.status_code >= 500:
+                err = f"HTTP {r.status_code}"
+            elif r.status_code != 200:
+                return None, f"HTTP {r.status_code}"
+            else:
+                return r.content, None
+        if attempt < 3: time.sleep(2 ** attempt)
+    return None, err
 
 
 KEEP_ON_ERROR = {"queries", "queries_details", "analytics_data", "analytics_stocks",   # платная аналитика
@@ -186,8 +206,10 @@ for month, kinds in comp.items():
             if res.get("status") != "processing": break
             time.sleep(4)
         if res.get("status") != "success" or not res.get("file"): continue
+        data, ferr = fetch(res["file"])
+        if ferr: print("compensation download", month, kind, ferr); continue
         try:
-            ws = load_workbook(io.BytesIO(requests.get(res["file"], timeout=60).content), data_only=True).active
+            ws = load_workbook(io.BytesIO(data), data_only=True).active
             for row in ws.iter_rows(values_only=True):
                 if row[1] and str(row[1]).isdigit() and row[2]:
                     crows.append({"month": month, "kind": kind, "type": row[2], "offer_id": row[4], "qty": row[7], "amount": row[13] if len(row) > 13 else None})
