@@ -318,7 +318,7 @@ function prices(D) {
 }
 
 /* ---------- Админ ---------- */
-const ST = { ok: ["ok", "обновлено успешно"], warn: ["warn", "обновлено с предупреждениями"], errors: ["bad", "обновлено, но данные с ошибками"], failed: ["bad", "прогон завершился ошибкой"], stale: ["bad", "данные устарели"], running: ["run", "идёт обновление"], never: ["", "не запускалось"] };
+const ST = { ok: ["ok", "обновлено успешно"], warn: ["warn", "обновлено с предупреждениями"], errors: ["bad", "обновлено, но данные с ошибками"], failed: ["bad", "прогон завершился ошибкой"], stale: ["bad", "данные устарели"], running: ["run", "идёт обновление"], never: ["", "журнал прогонов пуст"] };
 const LEGEND = {
   ok: "Все шаги отработали с кодом 0, данные пересобраны и опубликованы.",
   warn: "Прогон отработал, но есть отклонения: раздел не обновился, отчёт собран раньше сырья или в журнале есть строки ошибок.",
@@ -326,9 +326,9 @@ const LEGEND = {
   failed: "Шаг run_daily.sh завершился с ненулевым кодом — детали в журнале прогона.",
   stale: "Отчёт старше 26 часов: ежедневный прогон в 06:00 не состоялся.",
   running: "Прогон идёт прямо сейчас, сбор занимает около часа.",
-  never: "data/runs.json пуст: журнал не ведётся, cron или run_daily.sh не настроены."
+  never: "data/runs.json не найден: журнал ведётся с момента выкладки этой версии run_daily.sh, первая запись появится после ближайшего прогона в 06:00."
 };
-const badge = st => `<span class="badge ${(ST[st] || [""])[0]}">${esc((ST[st] || ["", st])[1])}</span>`;
+const badge = (st, label) => `<span class="badge ${(ST[st] || [""])[0]}">${esc(label || (ST[st] || ["", st])[1])}</span>`;
 const dt = s => s ? new Date(s).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
 const hms = s => s == null ? "—" : s >= 60 ? `${Math.floor(s / 60)} мин ${s % 60} с` : `${s} с`;
 const plural = (n, f) => `${n} ` + f[n % 10 === 1 && n % 100 !== 11 ? 0 : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? 1 : 2];
@@ -342,7 +342,7 @@ function admin(D) {
   const L = H.last_run || {}, steps = L.steps || [], bad = steps.filter(s => s.rc);
   const LV = { critical: "критично", warn: "внимание", info: "инфо" };
   $("#c").innerHTML = `<div class="grid kpis">
-    ${kpi("Состояние обновления", badge(H.status), `следующий запуск: ${esc(H.next_run)}`)}
+    ${kpi("Состояние обновления", badge(H.status, H.label), `следующий запуск: ${esc(H.next_run)}`)}
     ${kpi("Последний прогон", dt(L.started_at), !L.started_at ? "прогонов ещё не было" : L.finished_at ? `${esc(L.duration || "—")} · без ошибок: ${steps.length - bad.length} из ${steps.length}` : "идёт сейчас", bad.length ? "bad" : "")}
     ${kpi("Отчёт собран", dt(H.report_generated_at), H.report_age ? `${esc(H.report_age)}${H.period ? ` · данные за ${esc(H.period[0])} — ${esc(H.period[1])}` : ""}` : "нет data/metrics.json", H.report_generated_at ? "" : "bad")}
     ${kpi("Уведомления", `${H.counts.critical + H.counts.warn}`, `критичных: ${H.counts.critical}, внимания: ${H.counts.warn}, инфо: ${H.counts.info}`, H.counts.critical ? "bad" : H.counts.warn ? "warn" : "good")}</div>
@@ -364,7 +364,7 @@ function admin(D) {
 
   ${H.log_tail && H.log_tail.length ? `<div class="card"><h2>Строки ошибок из журнала</h2><pre class="log">${H.log_tail.map(esc).join("\n")}</pre><p class="note">/var/log/ozon-update.log, последний прогон.</p></div>` : ""}
 
-  <div class="card"><h2>Что означают статусы</h2><div class="scroll"><table><thead><tr><th>Статус</th><th>Когда ставится</th></tr></thead><tbody>${Object.keys(ST).map(k => `<tr><td>${badge(k)}</td><td>${esc(LEGEND[k])}</td></tr>`).join("")}</tbody></table></div>
+  <div class="card"><h2>Что означают статусы</h2><div class="scroll"><table><thead><tr><th>Статус</th><th>Когда ставится</th></tr></thead><tbody>${Object.keys(ST).map(k => `<tr><td>${badge(k, (H.legend || {})[k])}</td><td>${esc(LEGEND[k])}</td></tr>`).join("")}</tbody></table></div>
     <p class="note">Автообновление: cron <code>0 6 * * *</code> → <code>/opt/ozon/app/run_daily.sh</code>, журнал <code>/var/log/ozon-update.log</code>. Снимок состояния делается во время прогона, поэтому страница показывает данные на момент последней публикации. PDF-отчёты (make_report_pdf.py, make_full_report.py) в автообновление не входят — они собираются вручную.</p></div>`;
 }
 

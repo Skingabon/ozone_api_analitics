@@ -57,7 +57,7 @@ except Exception:
 last = runs[-1] if runs else None
 
 if not runs:
-    add("critical", "История обновлений пуста", "data/runs.json не найден: cron не запускался или run_daily.sh на сервере не обновлён.")
+    add("critical", "Журнал прогонов пуст", "data/runs.json не найден. Журнал ведётся с момента выкладки этой версии run_daily.sh: первая запись появится после ближайшего прогона в 06:00. Если прогон уже был — проверьте cron: /etc/cron.d/ozon.")
 elif last and not last.get("finished_at"):
     pass                                             # прогон ещё идёт — статус выставим ниже
 elif last:
@@ -160,7 +160,7 @@ else:
     status = "ok"
 
 LABELS = {"ok": "обновлено успешно", "warn": "обновлено с предупреждениями", "errors": "обновлено, но данные с ошибками",
-          "failed": "прогон завершился ошибкой", "stale": "данные устарели", "running": "идёт обновление", "never": "не запускалось"}
+          "failed": "прогон завершился ошибкой", "stale": "данные устарели", "running": "идёт обновление", "never": "журнал прогонов пуст"}
 
 health = {
     "generated_at": now.astimezone(timezone.utc).isoformat(timespec="seconds"),
