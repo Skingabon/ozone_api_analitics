@@ -6,9 +6,9 @@ const num = v => v == null ? "—" : Number(v).toLocaleString("ru-RU");
 const cls = v => v == null ? "" : v < 0 ? "bad" : v > 0 ? "good" : "";
 const page = document.body.dataset.page;
 
-const NAV = [["index.html", "Хаб", "hub"], ["dashboard.html", "Дашборд", "dashboard"], ["products.html", "Товары", "products"], ["cards.html", "Карточки", "cards"], ["ideas.html", "Идеи", "ideas"], ["quality.html", "Качество", "quality"], ["media.html", "Медиа", "media"], ["promos.html", "Акции", "promos"], ["prices.html", "Цены", "prices"], ["savings.html", "Экономия", "savings"], ["accounting.html", "Бухгалтерия", "accounting"]];
-function shell(title, upd) {
-  $("#app").innerHTML = `<header><div class="wrap"><span class="logo">HomeHelp · Ozon</span><nav>${NAV.map(n => `<a href="${n[0]}" class="${n[2] === page ? "on" : ""}">${n[1]}</a>`).join("")}</nav><span class="upd">${upd || ""}</span></div></header><main><div class="wrap"><h1>${title}</h1><div id="c"></div></div></main>`;
+const NAV = [["index.html", "Хаб", "hub"], ["dashboard.html", "Дашборд", "dashboard"], ["products.html", "Товары", "products"], ["cards.html", "Карточки", "cards"], ["ideas.html", "Идеи", "ideas"], ["quality.html", "Качество", "quality"], ["media.html", "Медиа", "media"], ["promos.html", "Акции", "promos"], ["prices.html", "Цены", "prices"], ["savings.html", "Экономия", "savings"], ["accounting.html", "Бухгалтерия", "accounting"], ["admin.html", "Админ", "admin"]];
+function shell(title, upd, alert) {
+  $("#app").innerHTML = `<header><div class="wrap"><span class="logo">HomeHelp · Ozon</span><nav>${NAV.map(n => `<a href="${n[0]}" class="${n[2] === page ? "on" : ""}">${n[1]}${n[2] === "admin" && alert ? `<i class="dot ${alert.cls}" title="${esc(alert.text)}"></i>` : ""}</a>`).join("")}</nav><span class="upd">${upd || ""}</span></div></header><main><div class="wrap"><h1>${title}</h1><div id="c"></div></div></main>`;
 }
 
 function bars(items, { fmt = rub, signed = false } = {}) {
@@ -317,6 +317,57 @@ function prices(D) {
   const dr = () => { $("#tp").innerHTML = table(cols, rows); makeSortable($("#tp"), cols, rows, dr); }; dr();
 }
 
+/* ---------- Админ ---------- */
+const ST = { ok: ["ok", "обновлено успешно"], warn: ["warn", "обновлено с предупреждениями"], errors: ["bad", "обновлено, но данные с ошибками"], failed: ["bad", "прогон завершился ошибкой"], stale: ["bad", "данные устарели"], running: ["run", "идёт обновление"], never: ["", "не запускалось"] };
+const LEGEND = {
+  ok: "Все шаги отработали с кодом 0, данные пересобраны и опубликованы.",
+  warn: "Прогон отработал, но есть отклонения: раздел не обновился, отчёт собран раньше сырья или в журнале есть строки ошибок.",
+  errors: "Прогон отработал, но данные повреждены: Ozon вернул ошибку по разделу, отчёт пустой или сырьё не обновилось.",
+  failed: "Шаг run_daily.sh завершился с ненулевым кодом — детали в журнале прогона.",
+  stale: "Отчёт старше 26 часов: ежедневный прогон в 06:00 не состоялся.",
+  running: "Прогон идёт прямо сейчас, сбор занимает около часа.",
+  never: "data/runs.json пуст: журнал не ведётся, cron или run_daily.sh не настроены."
+};
+const badge = st => `<span class="badge ${(ST[st] || [""])[0]}">${esc((ST[st] || ["", st])[1])}</span>`;
+const dt = s => s ? new Date(s).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
+const hms = s => s == null ? "—" : s >= 60 ? `${Math.floor(s / 60)} мин ${s % 60} с` : `${s} с`;
+const plural = (n, f) => `${n} ` + f[n % 10 === 1 && n % 100 !== 11 ? 0 : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? 1 : 2];
+
+function admin(D) {
+  const H = D.health;
+  if (!H) {
+    $("#c").innerHTML = `<div class="banner">Состояние обновления неизвестно: в data.json нет раздела health. Он появляется после прогона обновлённым server/run_daily.sh (шаги collector/run_log.py и collector/health.py).</div>`;
+    return;
+  }
+  const L = H.last_run || {}, steps = L.steps || [], bad = steps.filter(s => s.rc);
+  const LV = { critical: "критично", warn: "внимание", info: "инфо" };
+  $("#c").innerHTML = `<div class="grid kpis">
+    ${kpi("Состояние обновления", badge(H.status), `следующий запуск: ${esc(H.next_run)}`)}
+    ${kpi("Последний прогон", dt(L.started_at), !L.started_at ? "прогонов ещё не было" : L.finished_at ? `${esc(L.duration || "—")} · без ошибок: ${steps.length - bad.length} из ${steps.length}` : "идёт сейчас", bad.length ? "bad" : "")}
+    ${kpi("Отчёт собран", dt(H.report_generated_at), H.report_age ? `${esc(H.report_age)}${H.period ? ` · данные за ${esc(H.period[0])} — ${esc(H.period[1])}` : ""}` : "нет data/metrics.json", H.report_generated_at ? "" : "bad")}
+    ${kpi("Уведомления", `${H.counts.critical + H.counts.warn}`, `критичных: ${H.counts.critical}, внимания: ${H.counts.warn}, инфо: ${H.counts.info}`, H.counts.critical ? "bad" : H.counts.warn ? "warn" : "good")}</div>
+
+  <div class="card"><h2>Уведомления об ошибках</h2>${H.errors.length
+      ? `<div class="alerts">${H.errors.map(e => `<div class="alert ${esc(e.level)}"><b><span class="tag lv-${esc(e.level)}">${LV[e.level] || esc(e.level)}</span> ${esc(e.title)}</b>${e.detail ? `<div class="mut" style="font-size:13px">${esc(e.detail)}</div>` : ""}</div>`).join("")}</div>`
+      : `<p class="good">Ошибок нет: прогон отработал, все разделы собраны заново.</p>`}
+    <p class="note">Источники: коды возврата шагов run_daily.sh, признак <code>_error</code> в data/raw/*.json (при 429/5xx/400 от Ozon collect.py выходит с кодом 0 — иначе эти сбои не увидеть), строки ERROR из /var/log/ozon-update.log, возраст отчёта и сырья.</p></div>
+
+  <div class="card"><h2>Последний прогон по шагам</h2>${steps.length
+      ? `<div class="scroll"><table><thead><tr><th>Шаг</th><th>Результат</th><th class="n">Длительность</th><th>Завершён</th></tr></thead><tbody>${steps.map(s => `<tr><td><code>${esc(s.name)}</code></td><td>${s.rc ? `<span class="tag p-high">код ${s.rc}</span>` : `<span class="tag">ok</span>`}</td><td class="n">${hms(s.s)}</td><td>${dt(s.at)}</td></tr>`).join("")}</tbody></table></div>`
+      : `<p class="mut">Шаги не записаны: прогон начат, но run_log.py ещё не вызывался.</p>`}</div>
+
+  <div class="card"><h2>История обновлений</h2><p class="note" style="margin:0 0 10px">Показано ${plural(H.runs.length, ["прогон", "прогона", "прогонов"])} из ${H.counts.runs} в журнале data/runs.json (хранится 90).</p>
+    <div class="scroll scroll-y"><table><thead><tr><th>Начало</th><th>Завершение</th><th class="n">Длительность</th><th>Статус</th><th>Шаги с ошибкой</th></tr></thead><tbody>${H.runs.map(r => {
+        const st = r.steps || [], b = st.filter(x => x.rc);
+        return `<tr><td>${dt(r.started_at)}</td><td>${r.finished_at ? dt(r.finished_at) : `<span class="mut">идёт</span>`}</td><td class="n">${esc(r.duration || "—")}</td><td>${r.status === "ok" ? `<span class="tag">успешно</span>` : r.status === "failed" ? `<span class="tag p-high">ошибка</span>` : r.finished_at ? `<span class="tag p-medium">не закрыт</span>` : `<span class="tag p-medium">идёт</span>`}</td><td>${b.length ? `<span class="bad">${b.map(x => esc(x.name)).join(", ")}</span>` : `<span class="mut">${st.length} без ошибок</span>`}</td></tr>`;
+      }).join("") || `<tr><td colspan=5 class="mut">Прогонов пока нет</td></tr>`}</tbody></table></div></div>
+
+  ${H.log_tail && H.log_tail.length ? `<div class="card"><h2>Строки ошибок из журнала</h2><pre class="log">${H.log_tail.map(esc).join("\n")}</pre><p class="note">/var/log/ozon-update.log, последний прогон.</p></div>` : ""}
+
+  <div class="card"><h2>Что означают статусы</h2><div class="scroll"><table><thead><tr><th>Статус</th><th>Когда ставится</th></tr></thead><tbody>${Object.keys(ST).map(k => `<tr><td>${badge(k)}</td><td>${esc(LEGEND[k])}</td></tr>`).join("")}</tbody></table></div>
+    <p class="note">Автообновление: cron <code>0 6 * * *</code> → <code>/opt/ozon/app/run_daily.sh</code>, журнал <code>/var/log/ozon-update.log</code>. Снимок состояния делается во время прогона, поэтому страница показывает данные на момент последней публикации. PDF-отчёты (make_report_pdf.py, make_full_report.py) в автообновление не входят — они собираются вручную.</p></div>`;
+}
+
 /* ---------- Хаб ---------- */
 const TYPES_KEY = "type";
 async function hub(D) {
@@ -359,7 +410,10 @@ async function hub(D) {
   let D; try { D = await (await fetch("data.json", { cache: "no-store" })).json(); } catch { $("#c").innerHTML = "<p class=bad>Не удалось загрузить данные</p>"; return; }
   if (page === "report") { await window.buildReport(D, { hub, dashboard, products, cards, ideas, quality, media, promos, prices, savings, accounting }); return; }
   const upd = "Обновлено: " + new Date(D.generated_at).toLocaleString("ru-RU");
-  const T = { hub: "Хаб отчётов и задач", dashboard: "Дашборд магазина", products: "Товары и прибыль", accounting: "Бухгалтерия", savings: "Снижение расходов", cards: "Карточки: аудит и акции", ideas: "Что печатать и продавать", quality: "Качество и рейтинг", media: "Фото и видео товаров", promos: "Акции Ozon", prices: "Цены на товары" };
-  shell(T[page], upd);
-  ({ hub, dashboard, products, accounting, savings, cards, ideas, quality, media, promos, prices }[page])(D);
+  const T = { hub: "Хаб отчётов и задач", dashboard: "Дашборд магазина", products: "Товары и прибыль", accounting: "Бухгалтерия", savings: "Снижение расходов", cards: "Карточки: аудит и акции", ideas: "Что печатать и продавать", quality: "Качество и рейтинг", media: "Фото и видео товаров", promos: "Акции Ozon", prices: "Цены на товары", admin: "Админ: состояние обновления" };
+  const st = D.health && D.health.status;
+  const ha = !st || st === "ok" || st === "running" ? null
+    : { cls: st === "warn" ? "warn" : "bad", text: `${D.health.label}: ${plural(D.health.counts.critical, ["критичная ошибка", "критичных ошибки", "критичных ошибок"])}, ${plural(D.health.counts.warn, ["предупреждение", "предупреждения", "предупреждений"])}` };
+  shell(T[page], upd, ha);
+  ({ hub, dashboard, products, accounting, savings, cards, ideas, quality, media, promos, prices, admin }[page])(D);
 })();

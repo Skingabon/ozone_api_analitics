@@ -40,6 +40,23 @@ tr.done td{opacity:.55}tr.done .t{text-decoration:line-through}
 svg text{fill:var(--mut);font-size:11px}
 @media(max-width:600px){.upd{margin-left:0;width:100%}.kpi .v{font-size:22px}}
 
+/* админ: состояние автообновления */
+code{font:13px/1.5 ui-monospace,"Cascadia Mono",Consolas,monospace}
+.badge{display:inline-block;padding:3px 11px;border-radius:99px;font-size:14px;font-weight:600;border:1px solid var(--line);color:var(--mut);white-space:nowrap}
+.badge.ok{color:var(--good);border-color:var(--good)}.badge.warn{color:var(--warn);border-color:var(--warn)}
+.badge.bad{color:var(--bad);border-color:var(--bad)}.badge.run{color:var(--acc);border-color:var(--acc)}
+.dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--bad);margin-left:5px;vertical-align:middle}
+.dot.warn{background:var(--warn)}
+.alerts{display:flex;flex-direction:column;gap:8px}
+.alert{border:1px solid var(--line);border-left:3px solid var(--mut);border-radius:8px;padding:9px 12px;font-size:14px}
+.alert.critical{border-left-color:var(--bad)}.alert.warn{border-left-color:var(--warn)}.alert.info{border-left-color:var(--acc)}
+.alert b{display:block;margin-bottom:3px;font-weight:600}
+.lv-critical{color:var(--bad);border-color:var(--bad)}.lv-warn{color:var(--warn);border-color:var(--warn)}
+.scroll-y{max-height:420px;overflow:auto}
+.scroll-y thead th{position:sticky;top:0;background:var(--card);z-index:1}
+.log{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px;margin:0;max-height:300px;overflow:auto;
+  font:12px/1.55 ui-monospace,"Cascadia Mono",Consolas,monospace;white-space:pre-wrap;word-break:break-word}
+
 /* печать и отчёт */
 .cover{padding:30px 0}.cover-h{font-weight:700;color:var(--acc);margin-bottom:6px}.toc{font:17px/2 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;margin:10px 0 0 22px}.toc a{font-weight:700}
 .rp{padding-top:8px}.rp-top{font-size:13px;margin-bottom:4px}.rp-top a{color:var(--acc)}
@@ -47,6 +64,7 @@ svg text{fill:var(--mut);font-size:11px}
   @page{size:A4 landscape;margin:11mm}
   body{background:#fff;color:#000;font-size:12px}header,.filters,button{display:none!important}
   .scroll{overflow:visible!important}.wrap{max-width:none;padding:0}
+  .scroll-y{max-height:none!important;overflow:visible!important}.log{max-height:none!important}
   .rp{break-before:page}.cover{break-after:page}
   .card{break-inside:auto;box-shadow:none}tr{break-inside:avoid}thead{display:table-header-group}
   table{font-size:10.5px}th,td{padding:5px 6px}a{color:#0b5bd3;text-decoration:none}
