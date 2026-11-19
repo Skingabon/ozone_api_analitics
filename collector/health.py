@@ -5,7 +5,7 @@
 Запускается из server/run_daily.sh перед build_site.py. Ошибки Ozon API не валят прогон (collect.py пишет _error
 в data/raw/*.json и выходит с кодом 0), поэтому единственный способ их увидеть — прочитать сырьё и журнал.
 """
-import json, sys
+import json, os, sys
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -13,8 +13,11 @@ sys.stdout.reconfigure(encoding="utf-8")   # cron/редирект: иначе c
 
 ROOT = Path(__file__).resolve().parent.parent
 RAW = ROOT / "data" / "raw"
-LOG = Path("/var/log/ozon-update.log")
+LOG = Path(os.environ.get("OZON_UPDATE_LOG", "/var/log/ozon-update.log"))   # переменная — для локальной проверки разбора журнала
 KEEP_ON_ERROR = {"queries", "queries_details", "analytics_data", "analytics_stocks", "fbo_postings", "fbs_postings"}
+# Маркеры ошибок в логе. Общий «Не удалось» не годится: analyze.py печатает причины отмен Ozon,
+# а среди них есть значение «Не удалось доставить заказ» — оно давало ложное уведомление каждый день.
+LOG_MARKERS = (": ERROR ", "Traceback", "ЗАВЕРШИЛСЯ С КОДОМ", "не выполнена", "не обновлён")
 MAX_AGE_H = 26        # cron ежедневный в 06:00: больший возраст означает, что прогон не состоялся
 LONG_RUN_S = 90 * 60  # сбор на сервере идёт ~60 минут, дольше — уже повод посмотреть журнал
 RUNS_SHOWN = 60
@@ -132,9 +135,10 @@ try:
     lines = LOG.read_text(encoding="utf-8", errors="replace").splitlines()
     start_i = max((i for i, l in enumerate(lines) if " start" in l), default=0)
     seg = lines[start_i:]
-    log_tail = [l for l in seg if any(k in l for k in ("ERROR", "Traceback", "error:", "Не удалось", "не выполнена"))][-25:]
-    for l in log_tail[-5:]:
-        add("warn", "Строка ошибки в журнале", l.strip()[:200])
+    log_tail = [l for l in seg if any(k in l for k in LOG_MARKERS)][-25:]
+    if log_tail:   # построчно не дублируем: весь хвост показан в блоке «Строки ошибок из журнала» ниже
+        add("warn", f"В журнале прогона {plural(len(log_tail), 'строка', 'строки', 'строк')} с ошибками",
+            log_tail[0].strip()[:200] + (" …" if len(log_tail) > 1 else ""))
 except FileNotFoundError:
     pass                                             # локальный запуск: журнала cron нет
 except Exception as e:
