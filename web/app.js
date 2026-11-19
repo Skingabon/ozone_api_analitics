@@ -123,7 +123,7 @@ function cards(D) {
   const sev = { high: "p-high", medium: "p-medium", low: "p-low" }, sevT = { high: "критично", medium: "важно", low: "желательно" };
   const inActs = rows.filter(r => r.actions.length), disc = inActs.filter(r => r.discount_pct != null);
   const avgDisc = disc.length ? Math.round(disc.reduce((s, r) => s + r.discount_pct, 0) / disc.length) : 0;
-  const noKey = rows.filter(r => r.missing_key.length).length;
+  const noKey = rows.filter(r => r.missing_key.some(k => k === "Марка" || k === "Модель")).length;   // подпись KPI именно про марку/модель, а missing_key шире
   const priceCols = [
     { h: "Товар", f: r => `<b>${esc(r.offer_id)}</b>`, k: r => r.offer_id },
     { h: "Прайс", n: 1, f: r => rub(r.list_price), k: r => r.list_price },
