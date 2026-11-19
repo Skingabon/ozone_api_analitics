@@ -54,9 +54,29 @@ PLAN = {
 }
 
 
-def call(path, body):
-    r = requests.post(BASE + path, headers=H, json=body, timeout=60)
-    return r.status_code, r.json() if r.text else {}
+TIMEOUT = (10, 60)   # (connect, read), как в collect.py: SYN до api-seller.ozon.ru теряются регулярно, а 60 с на connect делали каждую неудачу минутной
+
+
+def call(path, body, method="POST"):
+    """Возвращает (status_code, json). Повторяет на обрыв связи и на 429/5xx — те же 4 попытки с паузами 1/2/4 с,
+    что и call() в collect.py. Повтор безопасен и для изменяющих вызовов: import, activate и deactivate
+    идемпотентны по offer_id/product_id. Наружу всегда отдаётся кортеж: исключение не рвёт ежедневный прогон."""
+    last = (599, {"_error": "нет ответа"})
+    for attempt in range(4):
+        try:
+            r = requests.request(method, BASE + path, headers=H, json=body, timeout=TIMEOUT)
+        except requests.RequestException as e:
+            last = (599, {"_error": f"{type(e).__name__}: {e}"[:300]})
+        else:
+            if r.status_code == 429 or r.status_code >= 500:
+                last = (r.status_code, {"_error": f"HTTP {r.status_code}", "_body": r.text[:300]})
+            else:
+                try:
+                    return r.status_code, r.json() if r.text else {}
+                except ValueError:
+                    return r.status_code, {"_body": r.text[:300]}   # 502 от чужого прокси приходит HTML'ом
+        if attempt < 3: time.sleep(2 ** attempt)
+    return last
 
 
 def merge_tags(new, old):

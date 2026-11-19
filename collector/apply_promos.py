@@ -21,11 +21,11 @@ LOG = ROOT / "data/promo_cleanup_log.json"
 
 
 def snapshot():
-    acts = A.call("/v1/actions", None)[1] if False else None
-    import requests
-    acts = requests.get(A.BASE + "/v1/actions", headers=A.H, timeout=60).json()["result"]
+    s, r = A.call("/v1/actions", None, method="GET")
+    if s != 200:
+        raise SystemExit(f"/v1/actions: HTTP {s} — {str(r)[:200]}")
     snap = {}
-    for a in acts:
+    for a in r["result"]:
         p = A.call("/v1/actions/products", {"action_id": a["id"], "limit": 100, "offset": 0})[1].get("result", {}).get("products", [])
         snap[a["id"]] = {"title": a["title"].strip(), "products": p}
     return snap
