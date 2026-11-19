@@ -40,6 +40,11 @@ for o, i in info.items():
     at = a.get("attributes", [])
     m = meta.get(f"{a.get('description_category_id')}/{a.get('type_id')}", {})
     filled = {str(x["id"]) for x in at}
+    # «Марка» и «Модель» автозапчастей живут в блоке «Применимость» (complex_attributes), а не в плоском
+    # списке атрибутов — без него колонка «Не заполнено» каждый день показывала уже заполненные поля.
+    for c in a.get("complex_attributes") or []:
+        if c.get("id"): filled.add(str(c["id"]))
+        for x in c.get("attributes", []): filled.add(str(x["id"]))
     names_missing = [v["name"] for k, v in m.items() if k not in filled and v["name"] in KEY]
     tags = next((x["values"][0]["value"] for x in at if x["id"] == 23171), "")
     desc = next((x["values"][0]["value"] for x in at if x["id"] == 4191), "")
