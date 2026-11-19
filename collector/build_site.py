@@ -1,20 +1,26 @@
 """Сборка статического сайта: web/* + data/metrics.json -> site/."""
-import csv, json, shutil
+import csv, hashlib, json, shutil
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "site"
 shutil.rmtree(OUT, ignore_errors=True); OUT.mkdir()
-for f in ("style.css", "app.js", "report.js"):
+ASSETS = ("style.css", "app.js", "report.js")
+for f in ASSETS:
     shutil.copy(ROOT / "web" / f, OUT / f)
+# Хеш содержимого в URL ассета: nginx для этого сайта не шлёт Cache-Control, поэтому без версии
+# браузер держит старый app.js из кэша и пользователь не видит обновлений интерфейса.
+V = {f: hashlib.md5((ROOT / "web" / f).read_bytes()).hexdigest()[:8] for f in ASSETS}
+CSS, JS, RJS = f"style.css?v={V['style.css']}", f"app.js?v={V['app.js']}", f"report.js?v={V['report.js']}"
 PAGES = {"index": "hub", "dashboard": "dashboard", "products": "products", "accounting": "accounting", "savings": "savings", "cards": "cards", "ideas": "ideas", "quality": "quality", "media": "media", "promos": "promos", "prices": "prices", "admin": "admin"}
+TITLE = {"hub": "Хаб", "dashboard": "Дашборд", "products": "Товары", "accounting": "Бухгалтерия", "savings": "Экономия", "cards": "Карточки", "ideas": "Идеи", "quality": "Качество", "media": "Медиа", "promos": "Акции", "prices": "Цены", "admin": "Админ"}
 tpl = ('<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
-       '<meta name="robots" content="noindex"><title>Ozon · {t}</title><link rel="stylesheet" href="style.css"></head>'
-       '<body data-page="{p}"><div id="app"></div><script src="app.js"></script></body></html>')
+       f'<meta name="robots" content="noindex"><title>Ozon · {{t}}</title><link rel="stylesheet" href="{CSS}"></head>'
+       f'<body data-page="{{p}}"><div id="app"></div><script src="{JS}"></script></body></html>')
 for name, p in PAGES.items():
-    (OUT / f"{name}.html").write_text(tpl.format(t={"hub": "Хаб", "dashboard": "Дашборд", "products": "Товары", "accounting": "Бухгалтерия", "savings": "Экономия", "cards": "Карточки", "ideas": "Идеи", "quality": "Качество", "media": "Медиа", "promos": "Акции", "prices": "Цены", "admin": "Админ"}[p], p=p), encoding="utf-8")
+    (OUT / f"{name}.html").write_text(tpl.format(t=TITLE[p], p=p), encoding="utf-8")
 
-(OUT / "report.html").write_text(tpl.format(t="Полный отчёт", p="report").replace('<script src="app.js"></script>', '<script src="app.js"></script><script src="report.js"></script>'), encoding="utf-8")
+(OUT / "report.html").write_text(tpl.format(t="Полный отчёт", p="report").replace(f'<script src="{JS}"></script>', f'<script src="{JS}"></script><script src="{RJS}"></script>'), encoding="utf-8")
 M = json.load(open(ROOT / "data/metrics.json", encoding="utf-8"))
 M["ideas"] = json.load(open(ROOT / "audit/ideas.json", encoding="utf-8"))
 try:
