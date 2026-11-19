@@ -155,32 +155,19 @@ for a in acts.get("result", []):
 save("actions_detail", detail)
 skus = [str(i["sources"][0]["sku"]) for i in info if i.get("sources")]
 qday = lambda d: d.strftime("%Y-%m-%dT00:00:00Z")
-QD = {"date_from": qday(since), "date_to": qday(now)}
-
-
-def queries(path, body):
-    """Поисковые запросы: без Premium окно «по сегодня» отдаёт 403 PermissionDenied — повторяем с концом «вчера».
-
-    Проверено 2026-11-19 прямыми запросами: date_to = сегодня -> 403 при любой длине окна,
-    date_to = вчера и date_from не старше ~38 дней -> 200. Если подписку вернут, первый запрос
-    пройдёт и откат не сработает, так что окно снова станет «по сегодня».
-    """
-    r = call(path, {**body, **QD})
-    if r.get("_error") != 403:
-        return r
-    q_to = now - timedelta(days=1)
-    print(f"{path}: 403 «Analytics for the specified period is available starting from the premium subscription», беру окно по {q_to:%Y-%m-%d}")
-    return call(path, {**body, "date_from": qday(q_to - timedelta(days=DAYS - 1)), "date_to": qday(q_to)})
-
-
-save("queries", queries("/v1/analytics/product-queries", {"skus": skus, "page": 0, "page_size": 100}))
+# Поисковая аналитика без Premium доступна только для периодов, закончившихся вчера, и не глубже ~38 дней:
+# date_to = сегодня даёт 403 PermissionDenied «Analytics for the specified period is available starting
+# from the premium subscription» (измерено 2026-11-19). Поэтому окно на день отстаёт от остального отчёта.
+q_to = now - timedelta(days=1)
+QD = {"date_from": qday(q_to - timedelta(days=DAYS - 1)), "date_to": qday(q_to)}
+save("queries", call("/v1/analytics/product-queries", {"skus": skus, **QD, "page": 0, "page_size": 100}))
 try:
     mp = json.load(open(ROOT / "data" / "metrics.json", encoding="utf-8"))["products"]
     o2s = {i["offer_id"]: str(i["sources"][0]["sku"]) for i in info if i.get("sources")}
     top = [o2s[p["offer_id"]] for p in mp if p["units"] > 0 and p["offer_id"] in o2s][:8]
 except Exception:
     top = skus[:8]
-save("queries_details", queries("/v1/analytics/product-queries/details", {"skus": top, "limit_by_sku": 15, "page": 0, "page_size": 100}))
+save("queries_details", call("/v1/analytics/product-queries/details", {"skus": top, **QD, "limit_by_sku": 15, "page": 0, "page_size": 100}))
 
 # качество: рейтинг продавца, контент-рейтинг карточек, оборачиваемость, заявки на скидку, компенсации
 save("rating_summary", call("/v1/rating/summary", {}))
