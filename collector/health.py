@@ -133,9 +133,21 @@ if metrics:
 log_tail = []
 try:
     lines = LOG.read_text(encoding="utf-8", errors="replace").splitlines()
-    start_i = max((i for i, l in enumerate(lines) if " start" in l), default=0)
-    seg = lines[start_i:]
-    log_tail = [l for l in seg if any(k in l for k in LOG_MARKERS)][-25:]
+    starts = [i for i, l in enumerate(lines) if l.startswith("=== ") and l.endswith(" start")]
+    stamp = lines[starts[-1]][4:].rsplit(" start", 1)[0].strip() if starts else None
+    # Последний сегмент журнала обязан принадлежать текущему прогону: ручной запуск с другим редиректом
+    # оставляет там чужие ошибки, и выдавать их за свои — значит врать о состоянии.
+    same_run = stamp is not None and bool(last)
+    if same_run:
+        try:
+            same_run = abs((datetime.fromisoformat(stamp) - datetime.fromisoformat(last["started_at"])).total_seconds()) <= 120
+        except ValueError:
+            same_run = False
+    if same_run:
+        log_tail = [l for l in lines[starts[-1]:] if any(k in l for k in LOG_MARKERS)][-25:]
+    elif stamp and last:
+        add("info", "Журнал cron не содержит последний прогон",
+            f"Последняя метка в {LOG.name} — {stamp}, а прогон в журнале — {last['started_at']}: похоже на ручной запуск с другим редиректом. Строки ошибок не показаны.")
     if log_tail:   # построчно не дублируем: весь хвост показан в блоке «Строки ошибок из журнала» ниже
         add("warn", f"В журнале прогона {plural(len(log_tail), 'строка', 'строки', 'строк')} с ошибками",
             log_tail[0].strip()[:200] + (" …" if len(log_tail) > 1 else ""))
