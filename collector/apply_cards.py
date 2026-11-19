@@ -22,9 +22,11 @@ BACKUP = ROOT / "data/backup/attributes_before_2026-11-19.json"   # снимок
 BRAND = {"Volkswagen": 58175, "Chery": 58105, "Changan": 58104}
 MODEL = {"Tiggo 4 Pro": 971500490, "Tiggo 7 Pro": 971500497, "CS35": 971488369}
 DICT_VAL = {  # attr id -> {название: dictionary_value_id}
-    22916: {"Volkswagen": 58175, "Chery": 58105, "Changan": 58104},
+    22916: {"Volkswagen": 58175, "Chery": 58105, "Changan": 58104, "Renault": 58158},
     22917: {"Tiggo 4 Pro (2020 - по н.в.) Внедорожник": 971500490, "Tiggo 7 Pro, I (2020 - по н.в.) Внедорожник": 971500497,
-            "CS35 (2012 - по н.в.) Внедорожник": 971488369},
+            "CS35 (2012 - по н.в.) Внедорожник": 971488369,
+            "Duster, II (2019 - по н.в.) Внедорожник": 971489266,
+            "Duster, II Рестайлинг (2021 - по н.в.) Внедорожник": 971489267},
 }
 
 # что менять: offer_id -> {name, "9048" = «Название модели», "11031" = альт. артикулы, 22916/22917 = марка/модель, tags}
@@ -93,12 +95,20 @@ PLAN = {
         "9048": "Renault Megane II, Clio (ремкомплект рейки, втулка PA 33 мм)",
         "tags": "#ремкомплект_рулевой_рейки #ремкомплект_рейки_меган_2"},
     "VTRenault_Duster_PA": {
-        "name": "Ремкомплект рулевой рейки Renault Duster (Рено Дастер), втулка усиленная, капрон, OEM 7700799093",
-        "9048": "Renault Duster (ремкомплект рейки, втулка капрон)",
-        "tags": "#ремкомплект_рулевой_рейки #втулка_дастер #ремкомплект_рейки_дастер"},
+        "name": "Ремкомплект рулевой рейки Renault Duster II (Рено Дастер 2), втулка усиленная, капрон, OEM 7700799093",
+        "9048": "Renault Duster II (ремкомплект рейки, втулка капрон)",
+        # Третьего поколения в словаре Ozon нет (просмотрены все 9852 значения атрибута 22917), а вариант
+        # «Duster, II (2017 - 2021)» импорт отбрасывает с attribute_hierarchy_fail «значение неактуально».
+        "fitment": ("Renault", ["Duster, II (2019 - по н.в.) Внедорожник",
+                                "Duster, II Рестайлинг (2021 - по н.в.) Внедорожник"]),
+        "tags": "#ремкомплект_рулевой_рейки #втулка_дастер #ремкомплект_рейки_дастер #рено_дастер_2 #renault_duster_2"},
     "Chery Tigo 4 PRO_VT": {
         "name": "Ремкомплект рулевой рейки Chery Tiggo 4 Pro (Чери Тигго 4 Про), втулка усиленная, капрон/полиамид, OEM CY9001KIT-PST",
         "9048": "Chery Tiggo 4 Pro (ремкомплект рейки, втулка усиленная)"},
+    "TK_CheryTigo4PRO": {   # толкатель, не втулка — «ремкомплект» в название не пишем
+        "name": "Толкатель рулевой рейки Chery Tiggo 4 Pro (Чери Тигго 4 Про), полиамид, OEM 201000094AA",
+        "7324": "201000094AA", "11031": "S201000094AA",
+        "tags": "#толкатель_тигго_4_про #201000094aa #упор_вала_тигго"},
     "KiaHyundai_Origin": {
         "name": "Ремкомплект рулевой рейки Hyundai Solaris, Kia Rio, Soul, Venga, втулка, OEM 565551Y600",
         "9048": "Hyundai Solaris, Kia Rio, Soul, Venga (ремкомплект рейки, втулка 565551Y600)",
@@ -194,6 +204,12 @@ def build(card, plan, price):
     if card.get("barcode"): item["barcode"] = card["barcode"]
     if card.get("color_image"): item["color_image"] = card["color_image"]
     if card.get("pdf_list"): item["pdf_list"] = card["pdf_list"]
+    if "fitment" in plan:   # блок «Применимость»: строка на каждую модель, марка в каждой строке повторяется
+        brand, models = plan["fitment"]
+        item["complex_attributes"] += [{"attributes": [
+            {"complex_id": 100003, "id": 22916, "values": [{"dictionary_value_id": DICT_VAL[22916][brand], "value": brand}]},
+            {"complex_id": 100003, "id": 22917, "values": [{"dictionary_value_id": DICT_VAL[22917][m], "value": m}]}]}
+            for m in models]
     return item
 
 
@@ -212,6 +228,8 @@ def show(offer, old, new):
     n = {a["id"]: a["values"][0]["value"] for a in new["attributes"] if a["values"]}
     for k in sorted(set(o) | set(n)):
         if o.get(k) != n.get(k) and k != 11254: print(f"  атрибут {k}: {str(o.get(k))[:70]!r} → {str(n.get(k))[:110]!r}")
+    co, cn = len(old.get("complex_attributes") or []), len(new.get("complex_attributes") or [])
+    if co != cn: print(f"  применимость: строк {co} → {cn}")
 
 
 def restore_prices(offers, prices):
