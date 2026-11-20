@@ -28,6 +28,10 @@ for r in load_workbook(ROOT / "cost_prices.xlsx", data_only=True).active.iter_ro
 
 P = defaultdict(lambda: defaultdict(float))  # offer -> метрики
 day = defaultdict(lambda: defaultdict(float))
+PD = defaultdict(lambda: defaultdict(lambda: defaultdict(float)))   # offer -> дата -> метрики: суточный разрез для фильтра периода на сайте
+ODAY = defaultdict(Counter)                                         # дата -> статья расходов (для пересчёта overhead за период)
+FDAY = defaultdict(Counter)                                         # дата -> сбор по товару (item fees)
+CDAY = defaultdict(Counter)                                         # дата -> причина отмены
 overhead = Counter()
 by_type = Counter()
 for a in L("accruals")["items"]:
@@ -42,6 +46,9 @@ for a in L("accruals")["items"]:
             m = P[o]
             m["units"] += q; m["sales"] += sale; m["commission"] += comm; m["delivery"] += dl
             if sign < 0: m["returns"] += 1
+            k = PD[o][d]
+            k["u"] += q; k["s"] += sale; k["c"] += comm; k["d"] += dl
+            if sign < 0: k["r"] += 1
             day[d]["sales"] += sale; day[d]["net"] += sale + comm + dl
             by_type["Комиссия"] += comm; by_type["Логистика и доставка"] += dl
             by_type["Продажи (реализация)"] += sale
@@ -50,10 +57,13 @@ for a in L("accruals")["items"]:
             o = sku2offer.get(int(it["sku"]), f"sku{it['sku']}")
             for f in it["fees"]:
                 v = amt(f["accrued"]); P[o]["item_fees"] += v; by_type[types.get(f["type_id"], str(f["type_id"]))] += v
+                PD[o][d]["f"] += v
+                FDAY[d][types.get(f["type_id"], str(f["type_id"]))] += v
                 day[d]["net"] += v
     else:
         v = amt(a["total_amount"]); n = types.get(a["non_item_fee"]["type_id"], str(a["non_item_fee"]["type_id"]))
         overhead[n] += v; by_type[n] += v; day[d]["net"] += v
+        ODAY[d][n] += v
 
 rows = []
 for o, base in offers.items():
@@ -80,8 +90,11 @@ for sch, p in allp:
     if p["status"] == "cancelled":
         cancel[sch] += 1
         cr = p.get("cancellation") or {}
-        cancel_reasons[cr.get("cancel_reason") or "не указана"] += 1
+        reason = cr.get("cancel_reason") or "не указана"
+        cancel_reasons[reason] += 1
+        CDAY[p["in_process_at" if "in_process_at" in p else "created_at"][:10]][reason] += 1
 orders_day = Counter(p["in_process_at" if "in_process_at" in p else "created_at"][:10] for _, p in allp)
+cancel_day = Counter(p["in_process_at" if "in_process_at" in p else "created_at"][:10] for _, p in allp if p["status"] == "cancelled")
 
 tot_sales = sum(r["sales"] for r in rows)
 tot_profit = sum(r["profit"] or 0 for r in rows)
@@ -98,6 +111,13 @@ base = {
     "by_type": {k: round(v, 2) for k, v in by_type.items()},
     "days": {d: {k: round(v, 2) for k, v in x.items()} for d, x in sorted(day.items())},
     "orders_day": dict(sorted(orders_day.items())),
+    "cancel_day": dict(sorted(cancel_day.items())),
+    # Суточный разрез по товарам: по нему сайт пересчитывает показатели под выбранный период.
+    # u — штуки, s — выручка, c — комиссия, d — логистика, f — прочее (item fees), r — возвраты.
+    "product_days": {o: {d: {k: round(x, 2) for k, x in dd.items()} for d, dd in sorted(days.items())} for o, days in PD.items()},
+    "overhead_day": {d: {k: round(x, 2) for k, x in c.items()} for d, c in sorted(ODAY.items())},
+    "fees_day": {d: {k: round(x, 2) for k, x in c.items()} for d, c in sorted(FDAY.items())},
+    "cancel_reason_day": {d: dict(c) for d, c in sorted(CDAY.items())},
     "cancel": {"by_schema": dict(cancel), "reasons": dict(cancel_reasons)},
     "cost_ratio": {"min": round(min(ratios), 4), "max": round(max(ratios), 4)} if ratios else None,
     "balance": bal, "cash_flow": cf,

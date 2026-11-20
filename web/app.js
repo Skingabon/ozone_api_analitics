@@ -39,31 +39,230 @@ function makeSortable(root, cols, rows, redraw) {
   });
 }
 
+/* ---------- Период и пересчёт агрегатов ---------- */
+const PERIOD_KEY = "ozonPeriod", GRID_KEY = "ozonGridFilters";
+const PRINT = () => !!window.__PRINT__;
+const rnd = v => v == null ? null : Math.round(v * 100) / 100;
+const rnd1 = v => v == null ? null : Math.round(v * 10) / 10;
+let PER = null, RANGE = null;
+
+function dataRange(D) {
+  const ks = [...Object.keys(D.days || {}), ...Object.keys(D.orders_day || {}), ...Object.keys(D.cancel_day || {})];
+  for (const o of Object.values(D.product_days || {})) ks.push(...Object.keys(o));
+  if (!ks.length) return null;
+  return { min: ks.reduce((a, b) => a < b ? a : b), max: ks.reduce((a, b) => a > b ? a : b) };
+}
+function initPeriod(D) {
+  RANGE = dataRange(D);
+  const full = RANGE ? { preset: "all", from: RANGE.min, to: RANGE.max } : null;
+  if (!RANGE) { PER = null; return; }
+  PER = full;
+  if (PRINT()) return;
+  try {
+    const s = JSON.parse(localStorage.getItem(PERIOD_KEY) || "null");
+    if (s && s.from && s.to && s.from <= s.to && s.from >= RANGE.min && s.to <= RANGE.max) PER = s;
+  } catch { }
+}
+function savePeriod() { try { localStorage.setItem(PERIOD_KEY, JSON.stringify(PER)); } catch { } }
+const inWin = d => PER ? (d >= PER.from && d <= PER.to) : true;
+const periodDays = () => PER ? Math.round((new Date(PER.to) - new Date(PER.from)) / 86400000) + 1 : 0;
+const periodLabel = () => {
+  if (!PER) return "весь период";
+  const f = s => s.slice(8, 10) + "." + s.slice(5, 7);
+  return `${f(PER.from)}–${f(PER.to)} (${periodDays()} дн.)`;
+};
+function sumRange(map) { let s = 0; for (const d in (map || {})) if (inWin(d)) s += map[d]; return s; }
+function sumRangeBy(map) {
+  const out = {};
+  for (const d in (map || {})) if (inWin(d)) for (const k in map[d]) out[k] = (out[k] || 0) + map[d][k];
+  return out;
+}
+
+/* Пересчёт товаров под выбранный период из суточного среза product_days.
+   Формулы те же, что в analyze.py: net = s + c + d + f, profit = net − себестоимость. */
+function aggProducts(D) {
+  const pd = D.product_days || {};
+  return (D.products || []).map(p => {
+    let u = 0, s = 0, c = 0, dl = 0, f = 0, r = 0;
+    const days = pd[p.offer_id] || {};
+    for (const d in days) {
+      if (!inWin(d)) continue;
+      const v = days[d];
+      u += v.u || 0; s += v.s || 0; c += v.c || 0; dl += v.d || 0; f += v.f || 0; r += v.r || 0;
+    }
+    const net = s + c + dl + f;
+    const cogs = p.unit_cost == null ? null : p.unit_cost * u;
+    const profit = cogs == null ? null : net - cogs;
+    return { ...p, units: Math.round(u), returns: Math.round(r), sales: rnd(s), commission: rnd(c), delivery: rnd(dl), item_fees: rnd(f),
+      net_before_cost: rnd(net), cogs: cogs == null ? null : rnd(cogs), profit: profit == null ? null : rnd(profit),
+      margin_pct: profit != null && s > 0 ? rnd1(profit / s * 100) : null,
+      commission_pct: s > 0 ? rnd1(-c / s * 100) : null };
+  });
+}
+
+/* Все производные от периода данные одним объектом — считается один раз на отрисовку раздела. */
+function aggregates(D) {
+  if (!D.product_days) return { P: D.products || [], kpi: D.kpi, by_type: D.by_type || {}, days: D.days || {}, orders_day: D.orders_day || {}, cancel_reasons: (D.cancel || {}).reasons || {}, partial: true };
+  const P = aggProducts(D);
+  const oh = sumRangeBy(D.overhead_day), fees = sumRangeBy(D.fees_day);
+  const sum = (a, k) => a.reduce((s, p) => s + (p[k] || 0), 0);
+  const sales = sum(P, "sales"), profit = sum(P, "profit"), commission = sum(P, "commission"), delivery = sum(P, "delivery");
+  const overhead = Object.values(oh).reduce((a, b) => a + b, 0);
+  const by_type = { "Продажи (реализация)": rnd(sales), "Комиссия": rnd(commission), "Логистика и доставка": rnd(delivery) };
+  for (const src of [fees, oh]) for (const k in src) by_type[k] = rnd((by_type[k] || 0) + src[k]);
+  const days = {}, orders_day = {}, cancel_reasons = {};
+  for (const d in (D.days || {})) if (inWin(d)) days[d] = D.days[d];
+  for (const d in (D.orders_day || {})) if (inWin(d)) orders_day[d] = D.orders_day[d];
+  for (const d in (D.cancel_reason_day || {})) if (inWin(d)) for (const k in D.cancel_reason_day[d]) cancel_reasons[k] = (cancel_reasons[k] || 0) + D.cancel_reason_day[d][k];
+  return {
+    P, days, orders_day, cancel_reasons, by_type, overhead: rnd(overhead), partial: false,
+    kpi: { ...D.kpi, orders: sumRange(D.orders_day), cancelled: sumRange(D.cancel_day), sales: rnd(sales),
+      profit_products: rnd(profit), overhead: rnd(overhead), profit_total: rnd(profit + overhead),
+      sku_sold: P.filter(p => p.units > 0).length }
+  };
+}
+
+/* Панель периода. fixed — пояснение для разделов, где период не влияет на данные. */
+function periodBar(D, opts = {}) {
+  if (PRINT() || !RANGE) return "";
+  const dis = opts.fixed ? " disabled" : "";
+  const presets = [["7", 7], ["14", 14], ["30", 30]].map(([n, days]) =>
+    `<button type="button" class="pbtn${PER.preset === n ? " on" : ""}" data-days="${days}"${dis}>${n} дней</button>`).join("");
+  return `<div class="period" id="period">
+    <span class="pl">Период:</span>
+    <span class="pbtns">${presets}<button type="button" class="pbtn${PER.preset === "all" ? " on" : ""}" data-preset="all"${dis}>весь (${periodDaysCalc(RANGE)} дн.)</button></span>
+    <label class="pdate">с <input type="date" id="pfrom" value="${PER.from}" min="${RANGE.min}" max="${RANGE.to}"${dis}></label>
+    <label class="pdate">по <input type="date" id="pto" value="${PER.to}" min="${RANGE.min}" max="${RANGE.to}"${dis}></label>
+    <span class="mut" id="pinfo">${opts.fixed ? esc(opts.fixed) : `данные пересчитаны за ${periodLabel()}`}</span>
+    </div>`;
+}
+const periodDaysCalc = r => Math.round((new Date(r.max) - new Date(r.min)) / 86400000) + 1;
+
+function mountPeriod(D, rerender) {
+  const bar = $("#period");
+  if (!bar) return;
+  const apply = p => { PER = p; savePeriod(); rerender(); };
+  bar.querySelectorAll(".pbtn[data-days]").forEach(b => b.onclick = () => {
+    const n = +b.dataset.days;
+    const to = RANGE.max;
+    const from0 = new Date(to); from0.setDate(from0.getDate() - (n - 1));
+    const from = from0.toISOString().slice(0, 10) < RANGE.min ? RANGE.min : from0.toISOString().slice(0, 10);
+    apply({ preset: String(n), from, to });
+  });
+  const all = bar.querySelector('.pbtn[data-preset="all"]');
+  if (all) all.onclick = () => apply({ preset: "all", from: RANGE.min, to: RANGE.max });
+  const fi = $("#pfrom"), ti = $("#pto");
+  const custom = () => {
+    if (!fi.value || !ti.value || fi.value > ti.value) return;
+    apply({ preset: "custom", from: fi.value, to: ti.value });
+  };
+  if (fi) fi.onchange = custom;
+  if (ti) ti.onchange = custom;
+}
+
+/* ---------- Таблицы с сортировкой и фильтрами по столбцам ---------- */
+const parseNum = s => { const n = parseFloat(String(s).replace(/\s/g, "").replace(",", ".")); return isNaN(n) ? null : n; };
+/* Число из готовой ячейки («1 234 ₽», «48 %», «−3 210 ₽»): нужно колонкам, у которых нет ключа сортировки k. */
+const numFromText = s => { const m = String(s).replace(/\u2212/g, "-").replace(/\s/g, "").replace(",", ".").match(/^[+-]?\d+(\.\d+)?/); return m ? parseFloat(m[0]) : null; };
+function numMatch(v, q) {
+  if (v == null || v === "") return false;
+  const s = String(q).trim().toLowerCase();
+  let m;
+  if ((m = s.match(/^([<>]=?)\s*(-?[\d\s.,]+)$/))) {
+    const n = parseNum(m[2]); if (n == null) return false;
+    const ge = m[1].endsWith("=");
+    return m[1][0] === ">" ? (ge ? v >= n : v > n) : (ge ? v <= n : v < n);
+  }
+  if ((m = s.match(/^(-?[\d\s.,]+)\s*[-–]\s*(-?[\d\s.,]+)$/))) {
+    const a = parseNum(m[1]), b = parseNum(m[2]);
+    if (a == null || b == null) return false;
+    return v >= Math.min(a, b) && v <= Math.max(a, b);
+  }
+  const n = parseNum(s);
+  return n == null ? String(v).toLowerCase().includes(s) : v === n;
+}
+const ENT = { "&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": '"', "&#39;": "'" };
+function cellText(c, r) {
+  if (c.t) return String(c.t(r) ?? "");
+  return String(c.f(r) ?? "").replace(/<[^>]*>/g, " ").replace(/&(amp|lt|gt|quot|#39);/g, e => ENT[e]).replace(/\s+/g, " ").trim();
+}
+const gridStore = () => { try { return JSON.parse(localStorage.getItem(GRID_KEY) || "{}"); } catch { return {}; } };
+function gridSave(id, f) { try { const s = gridStore(); s[id] = f; localStorage.setItem(GRID_KEY, JSON.stringify(s)); } catch { } }
+let GRID_N = 0;
+
+/* Единая таблица: сортировка кликом по заголовку + фильтр в каждой колонке.
+   Текст — подстрока; числа — «>1000», «<50», «>=10», диапазон «100-500».
+   Фильтры хранятся в localStorage под id таблицы. В печатной версии (report.html)
+   рисуется обычная таблица без полей ввода — иначе они попали бы в PDF. */
+function dataGrid(el, cols, rows, opts = {}) {
+  const host = typeof el === "string" ? $(el) : el;
+  if (!host) return null;
+  const id = opts.id || host.id || "g" + (++GRID_N);
+  const sortable = opts.sortable !== false, filterable = opts.filters !== false && !PRINT();
+  const st = { sort: null, dir: -1, f: filterable ? Object.assign({}, gridStore()[id] || {}) : {} };
+
+  const pass = r => cols.every((c, i) => {
+    const q = (st.f[i] || "").trim();
+    if (!q) return true;
+    if (c.n) return numMatch(c.k ? c.k(r) : numFromText(cellText(c, r)), q);
+    return cellText(c, r).toLowerCase().includes(q.toLowerCase());
+  });
+  const bodyHtml = () => {
+    const v = rows.filter(pass);
+    if (st.sort != null && cols[st.sort] && cols[st.sort].k) {
+      const k = cols[st.sort].k, d = st.dir;
+      v.sort((a, b) => { const x = k(a), y = k(b); return ((x == null) - (y == null)) || ((x > y ? 1 : x < y ? -1 : 0) * d); });
+    }
+    if (opts.onCount) opts.onCount(v.length, rows.length);
+    return v.map(r => `<tr>${cols.map(c => `<td class="${c.n ? "n " : ""}${c.c ? c.c(r) : ""}">${c.f(r)}</td>`).join("")}</tr>`).join("")
+      || `<tr><td colspan="${cols.length}" class="mut">Ничего не найдено — ослабьте фильтры столбцов</td></tr>`;
+  };
+  const headRow = () => `<tr>${cols.map((c, i) => `<th class="${c.n ? "n " : ""}${sortable && c.k ? " sort" : ""}${st.sort === i ? " on" : ""}" data-i="${i}">${c.h}${st.sort === i ? `<span class="arr">${st.dir > 0 ? "▲" : "▼"}</span>` : ""}</th>`).join("")}</tr>`;
+  const filterRow = () => filterable ? `<tr class="frow">${cols.map((c, i) => `<th class="${c.n ? "n " : ""}"><input data-i="${i}" value="${esc(st.f[i] || "")}" placeholder="${c.n ? ">100 · 100-500" : "фильтр"}" title="${c.n ? "Числовой фильтр: >1000, <50, >=10, диапазон 100-500" : "Поиск подстроки"}"></th>`).join("")}</tr>` : "";
+
+  host.innerHTML = `<div class="scroll${opts.scrollY ? " scroll-y" : ""}"><table><thead>${headRow()}${filterRow()}</thead><tbody>${bodyHtml()}</tbody></table></div>` +
+    (filterable ? `<p class="note">Фильтры столбцов: текст — подстрока, числа — <code>&gt;1000</code>, <code>&lt;50</code>, <code>&gt;=10</code>, диапазон <code>100-500</code>. Пустое поле — без ограничения, значения запоминаются в этом браузере.</p>` : "");
+  const thead = host.querySelector("thead"), tb = host.querySelector("tbody");
+
+  const bindSort = () => thead.querySelectorAll("tr:first-child th.sort").forEach(th => th.onclick = () => {
+    const i = +th.dataset.i;
+    if (st.sort === i) st.dir = -st.dir; else { st.sort = i; st.dir = -1; }
+    thead.querySelector("tr:first-child").outerHTML = headRow();   // перерисовываем только строку заголовков: поля фильтров не теряют фокус
+    tb.innerHTML = bodyHtml();
+    bindSort();
+  });
+  if (sortable) bindSort();
+  if (filterable) thead.querySelectorAll(".frow input").forEach(inp => inp.oninput = () => {
+    st.f[inp.dataset.i] = inp.value; gridSave(id, st.f); tb.innerHTML = bodyHtml();
+  });
+  return { refresh(nr) { rows = nr; tb.innerHTML = bodyHtml(); }, state: st };
+}
+
 /* ---------- Дашборд ---------- */
 function dashboard(D) {
-  const K = D.kpi, P = D.products;
+  const A = aggregates(D), K = A.kpi, P = A.P;
   const margin = K.sales ? K.profit_total / K.sales * 100 : 0;
   const warn = D.cost_ratio && D.cost_ratio.max < 0.10 ? `<div class="banner">Себестоимость составляет ${(D.cost_ratio.min * 100).toFixed(1)}–${(D.cost_ratio.max * 100).toFixed(1)}% от цены — прибыль может быть завышена. Проверьте закупочные цены (задача в хабе).</div>` : "";
   const topProfit = P.filter(p => p.profit != null && p.units > 0).sort((a, b) => b.profit - a.profit);
-  const byType = Object.entries(D.by_type).sort((a, b) => a[1] - b[1]);
-  $("#c").innerHTML = warn + `<div class="grid kpis">
-    ${kpi("Выручка (30 дн.)", rub(K.sales), `${K.orders} заказов, отменено ${K.cancelled}`)}
+  const byType = Object.entries(A.by_type).sort((a, b) => a[1] - b[1]);
+  $("#c").innerHTML = periodBar(D) + warn + `<div class="grid kpis">
+    ${kpi("Выручка", rub(K.sales), `${periodLabel()}: ${K.orders} заказов, отменено ${K.cancelled}`)}
     ${kpi("Прибыль после себестоимости", rub(K.profit_total), `маржа ${margin.toFixed(1)}%`, cls(K.profit_total))}
     ${kpi("Общие расходы (штрафы и пр.)", rub(K.overhead), "не привязаны к товарам", cls(K.overhead))}
-    ${kpi("Товаров с продажами", `${K.sku_sold} из ${K.sku_total}`, `остаток ${num(K.stock_units)} шт`)}
-    ${kpi("Баланс к выплате", rub(K.closing_balance), "на конец периода")}</div>
-  <div class="grid two"><div class="card"><h2>Начисления по дням, чистая сумма</h2>${dayChart(D.days, "net", "var(--bar)")}</div>
-  <div class="card"><h2>Заказы по дням</h2>${dayChart(Object.fromEntries(Object.entries(D.orders_day).map(([k, v]) => [k, { n: v }])), "n", "var(--acc)")}</div></div>
-  <div class="grid two"><div class="card"><h2>Прибыль по товарам</h2>${bars(topProfit.map(p => [p.offer_id, p.profit]), { signed: true })}<p class="note">Выручка − комиссия − логистика − сборы − себестоимость.</p></div>
+    ${kpi("Товаров с продажами", `${K.sku_sold} из ${K.sku_total}`, `остаток ${num(K.stock_units)} шт — на дату отчёта`)}
+    ${kpi("Баланс к выплате", rub(K.closing_balance), "на дату отчёта, от периода не зависит")}</div>
+  <div class="grid two"><div class="card"><h2>Начисления по дням, чистая сумма</h2>${dayChart(A.days, "net", "var(--bar)")}</div>
+  <div class="card"><h2>Заказы по дням</h2>${dayChart(Object.fromEntries(Object.entries(A.orders_day).map(([k, v]) => [k, { n: v }])), "n", "var(--acc)")}</div></div>
+  <div class="grid two"><div class="card"><h2>Прибыль по товарам</h2>${bars(topProfit.map(p => [p.offer_id, p.profit]), { signed: true })}<p class="note">Выручка − комиссия − логистика − сборы − себестоимость. Цена и остаток — на дату отчёта.</p></div>
   <div class="card"><h2>Куда уходят деньги</h2>${bars(byType.map(([k, v]) => [k, v]), { signed: true })}</div></div>
-  <div class="card"><h2>Причины отмен</h2>${bars(Object.entries(D.cancel.reasons).sort((a, b) => b[1] - a[1]), { fmt: v => v + " шт" })}</div>`;
+  <div class="card"><h2>Причины отмен</h2>${bars(Object.entries(A.cancel_reasons).sort((a, b) => b[1] - a[1]), { fmt: v => v + " шт" })}</div>`;
 }
 
 /* ---------- Товары ---------- */
 function products(D) {
-  const rows = D.products.slice();
+  const rows = aggregates(D).P;
   const cols = [
-    { h: "Артикул", f: r => `<b>${esc(r.offer_id)}</b><div class="mut" style="font-size:12px">${esc(r.name.slice(0, 70))}</div>`, k: r => r.offer_id },
+    { h: "Артикул", f: r => `<b>${esc(r.offer_id)}</b><div class="mut" style="font-size:12px">${esc(r.name.slice(0, 70))}</div>`, k: r => r.offer_id, t: r => r.offer_id + " " + r.name },
     { h: "Цена", n: 1, f: r => rub(r.price), k: r => r.price },
     { h: "Остаток", n: 1, f: r => num(r.stock), k: r => r.stock },
     { h: "Продано", n: 1, f: r => num(r.units), k: r => r.units },
@@ -73,53 +272,62 @@ function products(D) {
     { h: "Себестоимость", n: 1, f: r => rub(r.cogs), k: r => r.cogs },
     { h: "Прибыль", n: 1, f: r => rub(r.profit), c: r => cls(r.profit), k: r => r.profit },
     { h: "Маржа", n: 1, f: r => r.margin_pct == null ? "—" : r.margin_pct + "%", c: r => cls(r.margin_pct), k: r => r.margin_pct }];
-  $("#c").innerHTML = `<div class="filters"><label>Поиск<input id="q" placeholder="артикул или название"></label><label>Показать<select id="f"><option value="all">все</option><option value="sold">с продажами</option><option value="nosale">без продаж (есть остаток)</option><option value="loss">убыточные</option></select></label></div><div class="card" id="t"></div>`;
-  const draw = () => {
-    const q = $("#q").value.toLowerCase(), f = $("#f").value;
-    const v = rows.filter(r => (!q || (r.offer_id + r.name).toLowerCase().includes(q)) && (f === "all" || (f === "sold" && r.units > 0) || (f === "nosale" && r.units === 0 && r.stock > 0) || (f === "loss" && r.profit < 0)));
-    $("#t").innerHTML = table(cols, v); makeSortable($("#t"), cols, rows, draw);
-  };
-  $("#q").oninput = draw; $("#f").onchange = draw; draw();
+  // Отдельные поля поиска и выпадающий список убраны: их заменяют фильтры столбцов —
+  // «Продано» = 0 вместе с «Остаток» > 0 дают «без продаж, но с остатком», «Прибыль» < 0 — убыточные.
+  $("#c").innerHTML = periodBar(D) + `<div class="card"><h2>Товары и прибыль <span class="mut" id="cnt" style="font-weight:400;font-size:13px"></span></h2><div id="t"></div>
+    <p class="note">Продано, выручка, комиссия, логистика, себестоимость, прибыль и маржа пересчитаны за выбранный период. Цена и остаток — на дату формирования отчёта.</p></div>`;
+  dataGrid("#t", cols, rows, { id: "products", onCount: (n, all) => { const c = $("#cnt"); if (c) c.textContent = `— показано ${n} из ${all}`; } });
 }
 
 /* ---------- Бухгалтерия ---------- */
 function accounting(D) {
-  const b = D.balance, t = b.total, cf = b.cashflows;
+  const b = D.balance, t = b.total, cf = b.cashflows, A = aggregates(D);
   const money = m => m && m.value != null ? m.value : null;
-  const cfRows = D.cash_flow.map(w => ({ p: w.period.begin.slice(0, 10) + " — " + w.period.end.slice(0, 10), ...w }));
-  const cols = [{ h: "Период", f: r => r.p }, { h: "Заказы", n: 1, f: r => rub(r.orders_amount) }, { h: "Возвраты", n: 1, f: r => rub(r.returns_amount), c: r => cls(r.returns_amount) },
-    { h: "Комиссия", n: 1, f: r => rub(r.commission_amount) }, { h: "Услуги", n: 1, f: r => rub(r.services_amount) }, { h: "Доставка/возвраты", n: 1, f: r => rub(r.item_delivery_and_return_amount) }];
+  const cfRows = D.cash_flow.map(w => ({ p: w.period.begin.slice(0, 10) + " — " + w.period.end.slice(0, 10), b: w.period.begin.slice(0, 10), e: w.period.end.slice(0, 10), ...w }))
+    .filter(w => !PER || (w.e >= PER.from && w.b <= PER.to));   // недельный срез попадает в период, если пересекается с ним
+  const cols = [{ h: "Период", f: r => r.p, k: r => r.b, t: r => r.p }, { h: "Заказы", n: 1, f: r => rub(r.orders_amount), k: r => r.orders_amount }, { h: "Возвраты", n: 1, f: r => rub(r.returns_amount), c: r => cls(r.returns_amount), k: r => r.returns_amount },
+    { h: "Комиссия", n: 1, f: r => rub(r.commission_amount), k: r => r.commission_amount }, { h: "Услуги", n: 1, f: r => rub(r.services_amount), k: r => r.services_amount }, { h: "Доставка/возвраты", n: 1, f: r => rub(r.item_delivery_and_return_amount), k: r => r.item_delivery_and_return_amount }];
   const services = (cf.services || []).map(s => [s.name, money(s.amount) ?? s.amount?.value ?? 0]);
-  $("#c").innerHTML = `<div class="grid kpis">
-    ${kpi("Остаток на начало", rub(t.opening_balance.value))}${kpi("Начислено", rub(t.accrued.value), "", cls(t.accrued.value))}
-    ${kpi("Выплачено", rub((t.payments || []).reduce((s, p) => s + p.value, 0)))}${kpi("Остаток на конец", rub(t.closing_balance.value))}</div>
-  <div class="grid two"><div class="card"><h2>Продажи и возвраты</h2>${bars([["Продажи", money(cf.sales.amount)], ["Комиссия с продаж", money(cf.sales.fee)], ["Возвраты", money(cf.returns.amount)], ["Комиссия по возвратам", money(cf.returns.fee)]].filter(x => x[1] != null), { signed: true })}</div>
-  <div class="card"><h2>Услуги Ozon</h2>${services.length ? bars(services, { signed: true }) : "<p class=mut>Нет данных</p>"}</div></div>
-  <div class="card"><h2>Движение денег по неделям</h2>${table(cols, cfRows, { sortable: false })}</div>
-  <div class="card"><h2>Начисления по типам за период</h2>${bars(Object.entries(D.by_type).sort((a, b) => a[1] - b[1]), { signed: true })}</div>
-  <div class="card"><h2>Выгрузки для бухгалтера</h2><p><a href="accruals.csv" download>Начисления (CSV)</a> · <a href="products.csv" download>Прибыль по товарам (CSV)</a></p><p class="note">Файлы в кодировке UTF-8 с разделителем «;», открываются в Excel.</p></div>`;
+  $("#c").innerHTML = periodBar(D) + `<div class="grid kpis">
+    ${kpi("Остаток на начало", rub(t.opening_balance.value), "за весь собранный период")}${kpi("Начислено", rub(t.accrued.value), "за весь собранный период", cls(t.accrued.value))}
+    ${kpi("Выплачено", rub((t.payments || []).reduce((s, p) => s + p.value, 0)), "за весь собранный период")}${kpi("Остаток на конец", rub(t.closing_balance.value), "на дату отчёта")}</div>
+  <div class="grid two"><div class="card"><h2>Продажи и возвраты</h2>${bars([["Продажи", money(cf.sales.amount)], ["Комиссия с продаж", money(cf.sales.fee)], ["Возвраты", money(cf.returns.amount)], ["Комиссия по возвратам", money(cf.returns.fee)]].filter(x => x[1] != null), { signed: true })}<p class="note">Баланс Ozon отдаёт одним блоком за весь собранный период, поэтому фильтр периода на эти две карточки не влияет.</p></div>
+  <div class="card"><h2>Услуги Ozon</h2>${services.length ? bars(services, { signed: true }) : "<p class=mut>Нет данных</p>"}<p class="note">Тоже из баланса за весь собранный период.</p></div></div>
+  <div class="card"><h2>Движение денег по неделям</h2><div id="cf"></div><p class="note">Показаны недели, пересекающиеся с выбранным периодом.</p></div>
+  <div class="card"><h2>Начисления по типам за период</h2>${bars(Object.entries(A.by_type).sort((a, b) => a[1] - b[1]), { signed: true })}</div>
+  <div class="card"><h2>Выгрузки для бухгалтера</h2><p><a href="accruals.csv" download>Начисления (CSV)</a> · <a href="products.csv" download>Прибыль по товарам (CSV)</a></p><p class="note">Файлы в кодировке UTF-8 с разделителем «;», открываются в Excel. Выгружаются всегда за весь собранный период (30 дней), фильтр периода на них не влияет.</p></div>`;
+  dataGrid("#cf", cols, cfRows, { id: "accounting-cashflow" });
 }
 
 /* ---------- Экономия ---------- */
 function savings(D) {
   const S = D.savings, sv = S.items.slice().sort((a, b) => b.potential - a.potential);
   const conf = { "высокая": "good", "средняя": "warn", "низкая": "mut" };
-  const rows = sv.map(s => `<tr><td><b>${esc(s.lever)}</b><div class="mut" style="font-size:13px">${esc(s.how)}</div><div class="note">${esc(s.basis)}</div></td><td class="n">${rub(s.current)}</td><td class="n good"><b>${rub(s.potential)}</b></td><td class="${conf[s.confidence] || ""}">${esc(s.confidence)}</td></tr>`).join("");
   const pctUp = S.current_profit > 0 ? Math.round(S.total_potential / S.current_profit * 100) : 0;
-  $("#c").innerHTML = `<div class="grid kpis">
+  const leverCols = [
+    { h: "Направление и что делать", f: s => `<b>${esc(s.lever)}</b><div class="mut" style="font-size:13px">${esc(s.how)}</div><div class="note">${esc(s.basis)}</div>`, t: s => `${s.lever} ${s.how} ${s.basis}` },
+    { h: "Сейчас тратим", n: 1, f: s => rub(s.current), k: s => s.current },
+    { h: "Потенциал", n: 1, f: s => `<b class="good">${rub(s.potential)}</b>`, k: s => s.potential },
+    { h: "Уверенность", f: s => `<span class="${conf[s.confidence] || ""}">${esc(s.confidence)}</span>`, k: s => s.confidence, t: s => s.confidence }];
+  $("#c").innerHTML = periodBar(D, { fixed: "Расчёт экономии выполняется на сервере за 30 дней: фильтр периода на этот раздел не влияет." }) + `<div class="grid kpis">
     ${kpi("Комиссия Ozon за период", rub(S.commission_sum), `${S.commission_pct}% от выручки`, "bad")}
     ${kpi("Резерв без роста продаж", rub(S.expense_only_potential), "штрафы, убыточные, услуги, возвраты", "good")}
     ${kpi("Резерв с учётом упущенных заказов", rub(S.total_potential), `≈ +${pctUp}% к текущей прибыли (${rub(S.current_profit)})`, "good")}</div>
-  <div class="card"><h2>Где сократить расходы и что это даст (₽ в месяц)</h2><div class="scroll"><table><thead><tr><th>Направление и что делать</th><th class="n">Сейчас тратим</th><th class="n">Потенциал</th><th>Уверенность</th></tr></thead><tbody>${rows}</tbody></table></div><p class="note">${esc(S.note)}</p></div>
-  <div class="grid two"><div class="card"><h2>Комиссия: что даст снижение</h2><p class="mut" style="font-size:14px">Комиссия зависит от категории товара и утверждается Ozon; от схемы (FBO/FBS/rFBS) она не меняется. Ниже — эффект на текущем объёме продаж.</p>${table([{ h: "Снижение ставки", f: r => "−" + r.points + " п.п." }, { h: "Экономия в месяц", n: 1, f: r => rub(r.gain), c: () => "good" }], S.sensitivity, { sortable: false })}
+  <div class="card"><h2>Где сократить расходы и что это даст (₽ в месяц)</h2><div id="svlev"></div><p class="note">${esc(S.note)}</p></div>
+  <div class="grid two"><div class="card"><h2>Комиссия: что даст снижение</h2><p class="mut" style="font-size:14px">Комиссия зависит от категории товара и утверждается Ozon; от схемы (FBO/FBS/rFBS) она не меняется. Ниже — эффект на текущем объёме продаж.</p><div id="svsens"></div>
     <p class="note">Ставки 45–52% для запчастей необычно высоки. Проверьте в кабинете (Финансы → Тарифы) актуальную ставку категории и, если она не совпадает, обратитесь в поддержку с номерами отправлений. Точную причину по API определить нельзя.</p></div>
   <div class="card"><h2>Логистика: расходы по услугам</h2>${bars(S.logistics.map(x => [`${x.name} (${x.count})`, x.sum]), { signed: true })}<p class="note">В скобках — число операций.</p></div></div>
-  <div class="card"><h2>Категории и ставки комиссии</h2>${table([{ h: "Категория", f: r => esc(r.name) }, { h: "Товаров", n: 1, f: r => r.products }, { h: "Ставка", n: 1, f: r => r.percent == null ? "—" : r.percent + "%" }, { h: "Выручка", n: 1, f: r => rub(r.sales) }, { h: "Комиссия", n: 1, f: r => rub(r.commission) }], S.categories, { sortable: false })}<p class="note">Проверьте, что карточки лежат в правильной категории: неверная категория даёт другую ставку и хуже ранжируется.</p></div>`;
+  <div class="card"><h2>Категории и ставки комиссии</h2><div id="svcat"></div><p class="note">Проверьте, что карточки лежат в правильной категории: неверная категория даёт другую ставку и хуже ранжируется.</p></div>`;
+  dataGrid("#svlev", leverCols, sv, { id: "savings-levers" });
+  dataGrid("#svsens", [{ h: "Снижение ставки", f: r => "−" + r.points + " п.п.", k: r => r.points }, { h: "Экономия в месяц", n: 1, f: r => rub(r.gain), c: () => "good", k: r => r.gain }], S.sensitivity, { id: "savings-sensitivity" });
+  dataGrid("#svcat", [{ h: "Категория", f: r => esc(r.name), k: r => r.name, t: r => r.name }, { h: "Товаров", n: 1, f: r => r.products, k: r => r.products }, { h: "Ставка", n: 1, f: r => r.percent == null ? "—" : r.percent + "%", k: r => r.percent }, { h: "Выручка", n: 1, f: r => rub(r.sales), k: r => r.sales }, { h: "Комиссия", n: 1, f: r => rub(r.commission), k: r => r.commission }], S.categories, { id: "savings-categories" });
 }
 
 /* ---------- Карточки ---------- */
 function cards(D) {
-  const C = D.cards, rows = C.rows;
+  const C = D.cards, A = aggregates(D);
+  const unitsOf = Object.fromEntries(A.P.map(p => [p.offer_id, p.units]));
+  const rows = C.rows.map(r => ({ ...r, units: unitsOf[r.offer_id] ?? r.units }));   // «Продано» — за выбранный период
   const sev = { high: "p-high", medium: "p-medium", low: "p-low" }, sevT = { high: "критично", medium: "важно", low: "желательно" };
   const inActs = rows.filter(r => r.actions.length), disc = inActs.filter(r => r.discount_pct != null);
   const avgDisc = disc.length ? Math.round(disc.reduce((s, r) => s + r.discount_pct, 0) / disc.length) : 0;
@@ -157,7 +365,7 @@ function cards(D) {
       <b>Хэштеги</b><p class="mut" style="font-size:13px;word-break:break-word">${esc(c.hashtags)}</p>
       <b>Заполнить</b><ul>${Object.entries(c.attributes).map(([k, v]) => `<li><b>${esc(k)}:</b> ${esc(v)}</li>`).join("")}</ul>
       ${c.extra.length ? `<b>Ещё</b><ul>${c.extra.map(x => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}</div></div></div>`; }).join("");
-  $("#c").innerHTML = (C.applied ? `<div class="card" style="border-color:var(--good)"><b class="good">Правки внесены ${esc(C.applied.date)}.</b> ${esc(C.applied.text)}</div>` : "") + `<div class="grid kpis">
+  $("#c").innerHTML = periodBar(D, { fixed: "Аудит карточек, цены и акции — текущее состояние. От периода зависит только колонка «Продано»." }) + (C.applied ? `<div class="card" style="border-color:var(--good)"><b class="good">Правки внесены ${esc(C.applied.date)}.</b> ${esc(C.applied.text)}</div>` : "") + `<div class="grid kpis">
     ${kpi("Товаров в акциях", `${inActs.length} из ${rows.length}`, "почти все включены автоматически", inActs.length > rows.length / 2 ? "warn" : "")}
     ${kpi("Средняя скидка в акциях", avgDisc + "%", "от вашего прайса, платите вы", avgDisc >= 25 ? "bad" : "")}
     ${kpi("Карточек без марки/модели авто", `${noKey}`, "не попадают в подбор по автомобилю", noKey ? "bad" : "good")}
@@ -170,8 +378,8 @@ function cards(D) {
   <h2 style="margin-top:22px">Готовые правки по карточкам, по убыванию важности</h2>${cardBlocks}
   <p class="note">Тексты и значения атрибутов подготовлены по данным карточек и выдачи. Совместимость по годам и OEM-номера перед загрузкой сверьте по каталогу.</p>`;
   const rp = rows.slice().sort((a, b) => (b.discount_pct ?? -1) - (a.discount_pct ?? -1));
-  const drawP = () => { $("#pt").innerHTML = table(priceCols, rp); makeSortable($("#pt"), priceCols, rp, drawP); }; drawP();
-  const rh = rows.slice(); const drawH = () => { $("#ht").innerHTML = table(health, rh); makeSortable($("#ht"), health, rh, drawH); }; drawH();
+  dataGrid("#pt", priceCols, rp, { id: "cards-prices" });
+  dataGrid("#ht", health, rows.slice(), { id: "cards-health" });
 }
 
 /* ---------- Идеи ---------- */
@@ -181,7 +389,7 @@ function ideas(D) {
   const rowsN = I.niches.map(n => `<div class="card"><h2>${esc(n.name)} <span class="tag ${vc[n.verdict] === "bad" ? "p-high" : vc[n.verdict] === "warn" ? "p-medium" : ""}">${esc(n.verdict)}</span></h2>
     <div class="grid two"><div><b>Что видно на Ozon</b><p style="font-size:14px">${esc(n.evidence)}</p><p class="note">Статус данных: ${esc(n.status)}. Цены на витрине: ${esc(n.price)}.</p></div>
     <div><b>Риски</b><p style="font-size:14px">${esc(n.risk)}</p><b>Что делать</b><p style="font-size:14px" class="${vc[n.verdict] || ""}">${esc(n.action)}</p></div></div></div>`).join("");
-  $("#c").innerHTML = `<div class="card"><h2>Принципы отбора</h2><ul>${I.principles.map(p => `<li>${esc(p)}</li>`).join("")}</ul></div>
+  $("#c").innerHTML = periodBar(D, { fixed: "Идеи и калькулятор не зависят от периода: ниши сняты вручную, калькулятор считает по введённым значениям." }) + `<div class="card"><h2>Принципы отбора</h2><ul>${I.principles.map(p => `<li>${esc(p)}</li>`).join("")}</ul></div>
   <div class="card"><h2>Калькулятор: окупится ли товар на Ozon</h2>
     <div class="filters">
       <label>Цена, которую получаете (после скидок), ₽<input id="k_p" type="number" value="1200" min="0"></label>
@@ -204,14 +412,15 @@ function ideas(D) {
 
 /* ---------- Качество ---------- */
 function quality(D) {
-  const Q = D.quality, gs = { OK: "good", WARNING: "warn", CRITICAL: "bad" };
+  const Q = D.quality, A = aggregates(D), gs = { OK: "good", WARNING: "warn", CRITICAL: "bad" };
+  const salesOf = Object.fromEntries(A.P.map(p => [p.offer_id, p.sales]));
   const score = Q.ratings.find(r => r.key === "rating_review_avg_score_total");
   const prog = Q.ratings.find(r => r.key.includes("progress") || r.name.includes("прогрессив"));
   const need = Q.premium_threshold && score ? (Q.premium_threshold - score.value) : null;
-  const rateCols = [{ h: "Группа", f: r => esc(r.group) }, { h: "Показатель", f: r => esc(r.name) },
-    { h: "Сейчас", n: 1, f: r => r.value, k: r => r.value }, { h: "Было", n: 1, f: r => r.past },
-    { h: "Статус", f: r => `<span class="${gs[r.status] || "mut"}">${esc({ OK: "норма", WARNING: "внимание", CRITICAL: "критично", UNKNOWN_STATUS: "нет данных" }[r.status] || r.status)}</span>` }];
-  const cRows = Q.content.slice();
+  const rateCols = [{ h: "Группа", f: r => esc(r.group), k: r => r.group, t: r => r.group }, { h: "Показатель", f: r => esc(r.name), k: r => r.name, t: r => r.name },
+    { h: "Сейчас", n: 1, f: r => r.value, k: r => r.value }, { h: "Было", n: 1, f: r => r.past, k: r => r.past },
+    { h: "Статус", f: r => `<span class="${gs[r.status] || "mut"}">${esc({ OK: "норма", WARNING: "внимание", CRITICAL: "критично", UNKNOWN_STATUS: "нет данных" }[r.status] || r.status)}</span>`, k: r => r.status, t: r => r.status }];
+  const cRows = Q.content.map(r => ({ ...r, sales: salesOf[r.offer_id] ?? r.sales }));   // продажи — за выбранный период
   const cCols = [{ h: "Товар", f: r => `<b>${esc(r.offer_id)}</b>`, k: r => r.offer_id },
     { h: "Контент-рейтинг", n: 1, f: r => r.rating, c: r => r.rating < 60 ? "bad" : r.rating < 80 ? "warn" : "good", k: r => r.rating },
     { h: "Продажи", n: 1, f: r => rub(r.sales), k: r => r.sales },
@@ -223,7 +432,7 @@ function quality(D) {
     { h: "Хватит на дней", n: 1, f: r => r.idc == null ? "—" : Math.round(r.idc) }, { h: "Оценка", f: r => esc({ GRADES_GREEN: "норма", GRADES_NOSALES: "нет продаж", GRADES_CRITICAL: "критично", GRADES_SURPLUS: "избыток", GRADES_DEFICIT: "дефицит" }[r.grade] || r.grade) }];
   const cpCols = [{ h: "Месяц", f: r => esc(r.month) }, { h: "Тип", f: r => esc(r.type) }, { h: "Товар", f: r => esc(r.offer_id) }, { h: "Штук", n: 1, f: r => r.qty }, { h: "Сумма", n: 1, f: r => rub(r.amount) }];
   const fbs = Q.fbs_index;
-  $("#c").innerHTML = `<div class="grid kpis">
+  $("#c").innerHTML = periodBar(D, { fixed: "Рейтинги, заявки на скидку, оборачиваемость и компенсации Ozon отдаёт готовыми — от периода зависит только колонка «Продажи» в контент-рейтинге." }) + `<div class="grid kpis">
     ${kpi("Оценка товаров", score ? score.value : "—", Q.premium_threshold ? `до статуса Premium (${Q.premium_threshold}) не хватает ${need > 0 ? need.toFixed(2) : 0}` : "", score && score.value >= (Q.premium_threshold || 5) ? "good" : "warn")}
     ${kpi("Средний контент-рейтинг", Q.content_avg, "по всем карточкам, из 100", Q.content_avg < 70 ? "warn" : "")}
     ${kpi("Индекс ошибок FBS", fbs.index ?? "—", `${esc(fbs.from || "")} — ${esc(fbs.to || "")}`, (fbs.index || 0) > 1 ? "bad" : "good")}
@@ -234,11 +443,11 @@ function quality(D) {
   ${Q.discount_new.length ? `<div class="card"><h2>Заявки покупателей на скидку (ждут ответа)</h2><div id="dt"></div><p class="note">Каждая заявка на 1 штуку. Если ответить не успеть, заявка истекает сама. Согласие снижает цену этой единицы. Решение по цене остаётся за вами. Всего за период заявок: ${Object.entries(Q.discount_counts).map(([k, v]) => `${esc(k)} ${v}`).join(", ")}.</p></div>` : ""}
   <div class="grid two"><div class="card"><h2>Оборачиваемость (склады Ozon)</h2>${Q.turnover.length ? `<div id="tv"></div>` : "<p class=mut>Нет данных</p>"}<p class="note">Считается только по товарам, лежащим на складах Ozon (FBO). Товары на вашем складе (FBS) здесь не видны.</p></div>
   <div class="card"><h2>Компенсации от Ozon</h2>${Q.compensation.length ? `<div id="cp"></div>` : "<p class=mut>Начисленных компенсаций за последние 3 месяца нет.</p>"}<p class="note">${esc(Q.compensation_note)}</p></div></div>`;
-  const drawR = () => { $("#rt").innerHTML = table(rateCols, Q.ratings, { sortable: false }); }; drawR();
-  const drawC = () => { $("#ct").innerHTML = table(cCols, cRows); makeSortable($("#ct"), cCols, cRows, drawC); }; drawC();
-  if ($("#dt")) $("#dt").innerHTML = table(dCols, dt, { sortable: false });
-  if ($("#tv")) $("#tv").innerHTML = table(tCols, Q.turnover, { sortable: false });
-  if ($("#cp")) $("#cp").innerHTML = table(cpCols, Q.compensation, { sortable: false });
+  dataGrid("#rt", rateCols, Q.ratings, { id: "quality-ratings" });
+  dataGrid("#ct", cCols, cRows, { id: "quality-content" });
+  if ($("#dt")) dataGrid("#dt", dCols, dt, { id: "quality-discounts" });
+  if ($("#tv")) dataGrid("#tv", tCols, Q.turnover, { id: "quality-turnover" });
+  if ($("#cp")) dataGrid("#cp", cpCols, Q.compensation, { id: "quality-compensation" });
 }
 
 /* ---------- Медиа ---------- */
@@ -246,19 +455,19 @@ function media(D) {
   const M = D.media || {}, groups = Object.entries(M.groups || {});
   const byOffer = {};
   groups.forEach(([g, v]) => (v.offers || []).forEach(o => (byOffer[o] = byOffer[o] || []).push([g, v])));
-  const rows = D.products.slice().sort((a, b) => b.sales - a.sales);
+  const rows = aggregates(D).P.slice().sort((a, b) => b.sales - a.sales);
   const link = (g, v) => v.public_url ? `<a href="${esc(v.public_url)}" target="_blank" rel="noopener">${esc(g.replace(/_/g, " "))}</a>` : esc(g);
-  const cols = [{ h: "Товар", f: r => `<b>${esc(r.offer_id)}</b><div class="mut" style="font-size:12px">${esc(r.name.slice(0, 60))}</div>` },
-    { h: "Продажи", n: 1, f: r => rub(r.sales) },
-    { h: "Папки с фото и видео на Яндекс Диске", f: r => (byOffer[r.offer_id] || []).map(([g, v]) => link(g, v)).join("<br>") || `<span class=mut>нет материалов</span>` }];
-  const gCols = [{ h: "Папка", f: r => link(r[0], r[1]) }, { h: "Фото", n: 1, f: r => r[1].photos ?? "—" }, { h: "Видео", n: 1, f: r => r[1].videos ?? "—" },
-    { h: "Видео (имя файла)", f: r => (r[1].video_files || []).map(v => `<div style="font-size:12px">${esc(v)}</div>`).join("") || "—" },
-    { h: "Подходит для карточек", f: r => esc((r[1].offers || []).join(", ")) }];
-  $("#c").innerHTML = `<div class="card"><p style="font-size:14px">Фото и видео хранятся на Яндекс Диске (папка AVTO/TOVARY). Одни и те же материалы можно использовать в разных карточках. Видео и фото добавляются в карточку в кабинете Ozon (блок «Фото» и «Озон.Видео», загрузка с компьютера или по ссылке на Яндекс Диск). В текст описания и в характеристики внешние ссылки вставлять нельзя.</p></div>
+  const cols = [{ h: "Товар", f: r => `<b>${esc(r.offer_id)}</b><div class="mut" style="font-size:12px">${esc(r.name.slice(0, 60))}</div>`, k: r => r.offer_id, t: r => r.offer_id + " " + r.name },
+    { h: "Продажи", n: 1, f: r => rub(r.sales), k: r => r.sales },
+    { h: "Папки с фото и видео на Яндекс Диске", f: r => (byOffer[r.offer_id] || []).map(([g, v]) => link(g, v)).join("<br>") || `<span class=mut>нет материалов</span>`, t: r => (byOffer[r.offer_id] || []).map(([g]) => g).join(" ") }];
+  const gCols = [{ h: "Папка", f: r => link(r[0], r[1]), k: r => r[0], t: r => r[0] }, { h: "Фото", n: 1, f: r => r[1].photos ?? "—", k: r => r[1].photos }, { h: "Видео", n: 1, f: r => r[1].videos ?? "—", k: r => r[1].videos },
+    { h: "Видео (имя файла)", f: r => (r[1].video_files || []).map(v => `<div style="font-size:12px">${esc(v)}</div>`).join("") || "—", t: r => (r[1].video_files || []).join(" ") },
+    { h: "Подходит для карточек", f: r => esc((r[1].offers || []).join(", ")), t: r => (r[1].offers || []).join(" ") }];
+  $("#c").innerHTML = periodBar(D, { fixed: "Список материалов не зависит от периода; продажи в таблице пересчитаны за выбранный период." }) + `<div class="card"><p style="font-size:14px">Фото и видео хранятся на Яндекс Диске (папка AVTO/TOVARY). Одни и те же материалы можно использовать в разных карточках. Видео и фото добавляются в карточку в кабинете Ozon (блок «Фото» и «Озон.Видео», загрузка с компьютера или по ссылке на Яндекс Диск). В текст описания и в характеристики внешние ссылки вставлять нельзя.</p></div>
   <div class="card"><h2>Материалы по карточкам</h2><div id="mt"></div></div>
   <div class="card"><h2>Папки</h2><div id="mg"></div></div>`;
-  $("#mt").innerHTML = table(cols, rows, { sortable: false });
-  $("#mg").innerHTML = groups.length ? table(gCols, groups, { sortable: false }) : "<p class=mut>Папки ещё не опубликованы</p>";
+  dataGrid("#mt", cols, rows, { id: "media-by-offer" });
+  if (groups.length) dataGrid("#mg", gCols, groups, { id: "media-folders" }); else $("#mg").innerHTML = "<p class=mut>Папки ещё не опубликованы</p>";
 }
 
 /* ---------- Акции ---------- */
@@ -279,7 +488,7 @@ function promos(D) {
     { h: "Прайс", n: 1, f: r => rub(r.price) }, { h: "Цена в акции", n: 1, f: r => rub(r.max_price) }, { h: "Скидка", n: 1, f: r => r.discount + "%" }, { h: "Буст", n: 1, f: r => r.boost == null ? "—" : "+" + Math.round(r.boost) + "%" },
     { h: "Совет", f: r => `${tag(r.advice)}<div style="font-size:12px">${esc(r.why)}</div>` }];
   const ch = P.changes, chTxt = x => `<li><b>${esc(x.offer_id)}</b>: ${esc(x.action)}</li>`;
-  $("#c").innerHTML = `<div class="grid kpis">
+  $("#c").innerHTML = periodBar(D, { fixed: "Акции — текущее состояние участия и цен, период на них не влияет. Изменения показаны за последние сутки." }) + `<div class="grid kpis">
     ${kpi("Товаров в акциях", K.products, `${K.participations} участий, средняя скидка ${K.avg_discount}%`, K.products ? "warn" : "good")}
     ${kpi("Советую убрать", K.remove_products, `${K.remove} участий с невыгодной скидкой`, K.remove ? "bad" : "good")}
     ${kpi("Стоит подключить", K.join, "акции с небольшой скидкой", K.join ? "good" : "")}</div>
@@ -288,9 +497,9 @@ function promos(D) {
   <div class="card"><h2>Акции Ozon</h2><div id="ta"></div></div>
   <div class="card"><h2>Где товары участвуют сейчас</h2>${P.participation.length ? `<div id="tp"></div>` : "<p class=good>Ни один товар не участвует в акциях.</p>"}<p class="note">${esc(P.note)} Порог совета «убрать»: скидка от 15% и продажи не окупают потерю, либо продажа в убыток.</p></div>
   <div class="card"><h2>Куда можно вступить</h2><div id="tc"></div></div>`;
-  $("#ta").innerHTML = table(aCols, P.actions, { sortable: false });
-  if ($("#tp")) { const rp = P.participation.slice(); const dp = () => { $("#tp").innerHTML = table(pCols, rp); makeSortable($("#tp"), pCols, rp, dp); }; dp(); }
-  const rc = P.candidates.filter(c => c.advice !== "skip" || c.discount < 40); const dc = () => { $("#tc").innerHTML = table(cCols, rc); }; dc();
+  dataGrid("#ta", aCols, P.actions, { id: "promos-actions" });
+  if ($("#tp")) dataGrid("#tp", pCols, P.participation.slice(), { id: "promos-participation" });
+  dataGrid("#tc", cCols, P.candidates.filter(c => c.advice !== "skip" || c.discount < 40), { id: "promos-candidates" });
 }
 
 /* ---------- Цены ---------- */
@@ -308,13 +517,13 @@ function prices(D) {
     { h: "Цена для маржи 30%", n: 1, f: r => r.price_m30 == null ? "—" : rub(r.price_m30), k: r => r.price_m30 },
     { h: "Прибыль/шт", n: 1, f: r => r.profit_unit == null ? "—" : rub(r.profit_unit), c: r => r.profit_unit != null && r.profit_unit < 0 ? "bad" : "", k: r => r.profit_unit },
     { h: "Заметки", f: r => r.notes.map(n => `<div style="font-size:12px">${esc(n)}</div>`).join("") }];
-  $("#c").innerHTML = `<div class="grid kpis">
+  $("#c").innerHTML = periodBar(D, { fixed: "Цены, баллы Ozon и безубыточность — текущие значения из API, период на них не влияет." }) + `<div class="grid kpis">
     ${kpi("Товаров", K.products, "цены из API Ozon")}
     ${kpi("Автодобавление в акции", `${K.auto_add} из ${K.products}`, K.auto_add_unwanted ? `${K.auto_add_unwanted} включено без вашего решения` : "включено только там, где выгоден буст", K.auto_add_unwanted ? "warn" : "good")}
     ${kpi("Баллы Ozon в цене покупателя", K.avg_points_share + "%", "в среднем по заказам: столько скидки платит Ozon", "")}
     ${kpi("Цена ниже безубыточной", K.below_breakeven, "с учётом себестоимости", K.below_breakeven ? "bad" : "good")}</div>
   <div class="card"><h2>Цены на товары</h2><div id="tp"></div><p class="note">${esc(P.note)} Безубыточная цена = (логистика + себестоимость) / (1 − комиссия). «Цена для маржи 30%» считается так же с запасом 30% от цены. Себестоимость взята из вашей таблицы.</p></div>`;
-  const dr = () => { $("#tp").innerHTML = table(cols, rows); makeSortable($("#tp"), cols, rows, dr); }; dr();
+  dataGrid("#tp", cols, rows, { id: "prices" });
 }
 
 /* ---------- Админ ---------- */
@@ -356,16 +565,21 @@ function admin(D) {
       ? `<div class="scroll"><table><thead><tr><th>Шаг</th><th>Результат</th><th class="n">Длительность</th><th>Завершён</th></tr></thead><tbody>${steps.map(s => `<tr><td><code>${esc(s.name)}</code></td><td>${s.rc ? `<span class="tag p-high">код ${s.rc}</span>` : `<span class="tag">ok</span>`}</td><td class="n">${hms(s.s)}</td><td>${dt(s.at)}</td></tr>`).join("")}</tbody></table></div>`
       : `<p class="mut">Шаги не записаны: прогон начат, но run_log.py ещё не вызывался.</p>`}</div>
 
-  <div class="card"><h2>История обновлений</h2><p class="note" style="margin:0 0 10px">Показано ${plural(H.runs.length, ["прогон", "прогона", "прогонов"])} из ${H.counts.runs} в журнале data/runs.json (хранится 90).</p>
-    <div class="scroll scroll-y"><table><thead><tr><th>Начало</th><th>Завершение</th><th class="n">Длительность</th><th>Статус</th><th>Шаги с ошибкой</th></tr></thead><tbody>${H.runs.map(r => {
-        const st = r.steps || [], b = st.filter(x => x.rc);
-        return `<tr><td>${dt(r.started_at)}</td><td>${r.finished_at ? dt(r.finished_at) : `<span class="mut">идёт</span>`}</td><td class="n">${esc(r.duration || "—")}</td><td>${r.status === "ok" ? `<span class="tag">успешно</span>` : r.status === "failed" ? `<span class="tag p-high">ошибка</span>` : r.finished_at ? `<span class="tag p-medium">не закрыт</span>` : `<span class="tag p-medium">идёт</span>`}</td><td>${b.length ? `<span class="bad">${b.map(x => esc(x.name)).join(", ")}</span>` : `<span class="mut">${st.length} без ошибок</span>`}</td></tr>`;
-      }).join("") || `<tr><td colspan=5 class="mut">Прогонов пока нет</td></tr>`}</tbody></table></div></div>
+  <div class="card"><h2>История обновлений <span class="mut" id="runcnt" style="font-weight:400;font-size:13px"></span></h2><div id="runs"></div>
+    <p class="note">В журнале data/runs.json хранится ${H.counts.runs} ${plural(H.counts.runs, ["прогон", "прогона", "прогонов"])}, показываются последние ${H.runs.length}.</p></div>
 
   ${H.log_tail && H.log_tail.length ? `<div class="card"><h2>Строки ошибок из журнала</h2><pre class="log">${H.log_tail.map(esc).join("\n")}</pre><p class="note">/var/log/ozon-update.log, последний прогон.</p></div>` : ""}
 
   <div class="card"><h2>Что означают статусы</h2><div class="scroll"><table><thead><tr><th>Статус</th><th>Когда ставится</th></tr></thead><tbody>${Object.keys(ST).map(k => `<tr><td>${badge(k, (H.legend || {})[k])}</td><td>${esc(LEGEND[k])}</td></tr>`).join("")}</tbody></table></div>
     <p class="note">Автообновление: cron <code>0 6 * * *</code> → <code>/opt/ozon/app/run_daily.sh</code>, журнал <code>/var/log/ozon-update.log</code>. Снимок состояния делается во время прогона, поэтому страница показывает данные на момент последней публикации. PDF-отчёты (make_report_pdf.py, make_full_report.py) в автообновление не входят — они собираются вручную.</p></div>`;
+
+  const runCols = [
+    { h: "Начало", f: r => dt(r.started_at), k: r => r.started_at, t: r => r.started_at },
+    { h: "Завершение", f: r => r.finished_at ? dt(r.finished_at) : `<span class="mut">идёт</span>`, k: r => r.finished_at, t: r => r.finished_at || "идёт" },
+    { h: "Длительность", n: 1, f: r => esc(r.duration || "—"), k: r => r.duration_s },
+    { h: "Статус", f: r => r.status === "ok" ? `<span class="tag">успешно</span>` : r.status === "failed" ? `<span class="tag p-high">ошибка</span>` : r.finished_at ? `<span class="tag p-medium">не закрыт</span>` : `<span class="tag p-medium">идёт</span>`, k: r => r.status, t: r => r.status || "не закрыт" },
+    { h: "Шаги с ошибкой", f: r => { const b = (r.steps || []).filter(x => x.rc); return b.length ? `<span class="bad">${b.map(x => esc(x.name)).join(", ")}</span>` : `<span class="mut">${(r.steps || []).length} без ошибок</span>`; }, t: r => (r.steps || []).filter(x => x.rc).map(x => x.name).join(", ") }];
+  dataGrid("#runs", runCols, H.runs, { id: "admin-runs", scrollY: true, onCount: (n, all) => { const c = $("#runcnt"); if (c) c.textContent = `— показано ${n} из ${all}`; } });
 }
 
 /* ---------- Хаб ---------- */
@@ -376,7 +590,7 @@ async function hub(D) {
   catch { live = false; tasks = D.tasks_seed || []; }
   const types = [...new Set(tasks.map(t => t.type))].sort();
   const reports = [["dashboard.html", "Дашборд", "Выручка, прибыль, расходы, отмены"], ["products.html", "Товары", "Прибыль и маржа по каждому артикулу"], ["cards.html", "Карточки и акции", "Аудит SEO, конкуренты, готовые тексты, цены в акциях"], ["ideas.html", "Идеи для печати", "Что ещё печатать и продавать: спрос, конкуренты, калькулятор"], ["quality.html", "Качество и рейтинг", "Рейтинг продавца, контент-рейтинг, заявки на скидку, компенсации"], ["media.html", "Фото и видео", "Папки Яндекс Диска по товарам"], ["promos.html", "Акции", "Где товары в акциях, что убрать, куда вступить (обновляется ежедневно)"], ["prices.html", "Цены на товары", "Цена продавца, что платит покупатель, баллы Ozon, безубыточная цена"], ["savings.html", "Экономия расходов", "Комиссии, штрафы, логистика: сколько можно сэкономить"], ["accounting.html", "Бухгалтерия", "Баланс, движение денег, начисления"], ["accruals.csv", "Начисления (CSV)", "Выгрузка для учёта"], ["products.csv", "Прибыль по товарам (CSV)", "Выгрузка для Excel"]];
-  $("#c").innerHTML = `<div class="grid reports" style="margin-bottom:18px">${reports.map(r => `<a href="${r[0]}"><b>${r[1]}</b><span>${r[2]}</span></a>`).join("")}</div>
+  $("#c").innerHTML = periodBar(D, { fixed: "Период действует в разделах с данными (Дашборд, Товары, Бухгалтерия и др.). Даты ниже — отдельный фильтр истории задач." }) + `<div class="grid reports" style="margin-bottom:18px">${reports.map(r => `<a href="${r[0]}"><b>${r[1]}</b><span>${r[2]}</span></a>`).join("")}</div>
   ${live ? "" : `<div class="banner">Сервер задач недоступен: список только для чтения, изменения не сохранятся.</div>`}
   <div class="card"><h2>Задачи и история</h2>
   <div class="filters"><label>С даты<input type="date" id="d1"></label><label>По дату<input type="date" id="d2"></label>
@@ -408,12 +622,14 @@ async function hub(D) {
 (async () => {
   if (page !== "report") shell("Загрузка…");
   let D; try { D = await (await fetch("data.json", { cache: "no-store" })).json(); } catch { $("#c").innerHTML = "<p class=bad>Не удалось загрузить данные</p>"; return; }
-  if (page === "report") { await window.buildReport(D, { hub, dashboard, products, cards, ideas, quality, media, promos, prices, savings, accounting }); return; }
+  if (page === "report") { window.__PRINT__ = true; initPeriod(D); await window.buildReport(D, { hub, dashboard, products, cards, ideas, quality, media, promos, prices, savings, accounting }); return; }
   const upd = "Обновлено: " + new Date(D.generated_at).toLocaleString("ru-RU");
   const T = { hub: "Хаб отчётов и задач", dashboard: "Дашборд магазина", products: "Товары и прибыль", accounting: "Бухгалтерия", savings: "Снижение расходов", cards: "Карточки: аудит и акции", ideas: "Что печатать и продавать", quality: "Качество и рейтинг", media: "Фото и видео товаров", promos: "Акции Ozon", prices: "Цены на товары", admin: "Админ: состояние обновления" };
   const st = D.health && D.health.status;
   const ha = !st || st === "ok" || st === "running" ? null
     : { cls: st === "warn" ? "warn" : "bad", text: `${D.health.label}: ${plural(D.health.counts.critical, ["критичная ошибка", "критичных ошибки", "критичных ошибок"])}, ${plural(D.health.counts.warn, ["предупреждение", "предупреждения", "предупреждений"])}` };
-  shell(T[page], upd, ha);
-  ({ hub, dashboard, products, accounting, savings, cards, ideas, quality, media, promos, prices, admin }[page])(D);
+  initPeriod(D);
+  const FNS = { hub, dashboard, products, accounting, savings, cards, ideas, quality, media, promos, prices, admin };
+  const render = () => { shell(T[page], upd, ha); FNS[page](D); mountPeriod(D, render); };   // смена периода перерисовывает раздел целиком
+  render();
 })();

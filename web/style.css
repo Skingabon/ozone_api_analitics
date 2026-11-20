@@ -57,12 +57,29 @@ code{font:13px/1.5 ui-monospace,"Cascadia Mono",Consolas,monospace}
 .log{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px;margin:0;max-height:300px;overflow:auto;
   font:12px/1.55 ui-monospace,"Cascadia Mono",Consolas,monospace;white-space:pre-wrap;word-break:break-word}
 
+/* панель выбора периода и фильтры столбцов в таблицах */
+.period{display:flex;gap:10px;flex-wrap:wrap;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:14px}
+.period .pl{font-size:11px;color:var(--mut);text-transform:uppercase;letter-spacing:.04em}
+.pbtns{display:flex;gap:6px;flex-wrap:wrap}
+.pbtn{padding:4px 10px;font-size:13px;border-radius:99px;background:var(--bg)}
+.pbtn.on{background:var(--acc);color:#fff;border-color:var(--acc)}
+.pbtn:disabled{opacity:.45;cursor:not-allowed}
+.pdate{display:flex;align-items:center;gap:5px;font-size:12px;color:var(--mut)}
+.pdate input{padding:4px 7px;font-size:13px}
+.period>#pinfo{font-size:12px;margin-left:auto}
+.frow th{padding:3px 4px;background:var(--card)}
+.frow input{width:100%;min-width:74px;padding:3px 6px;font-size:12px;border-radius:5px;background:var(--bg)}
+.frow th.n input{text-align:right}
+th.sort .arr{font-size:9px;margin-left:3px;color:var(--acc)}
+th.on{color:var(--acc)}
+@media(max-width:600px){.period>#pinfo{margin-left:0;width:100%}}
+
 /* печать и отчёт */
 .cover{padding:30px 0}.cover-h{font-weight:700;color:var(--acc);margin-bottom:6px}.toc{font:17px/2 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;margin:10px 0 0 22px}.toc a{font-weight:700}
 .rp{padding-top:8px}.rp-top{font-size:13px;margin-bottom:4px}.rp-top a{color:var(--acc)}
 @media print{
   @page{size:A4 landscape;margin:11mm}
-  body{background:#fff;color:#000;font-size:12px}header,.filters,button{display:none!important}
+  body{background:#fff;color:#000;font-size:12px}header,.filters,.period,.frow,button{display:none!important}
   .scroll{overflow:visible!important}.wrap{max-width:none;padding:0}
   .scroll-y{max-height:none!important;overflow:visible!important}.log{max-height:none!important}
   .rp{break-before:page}.cover{break-after:page}
